@@ -1,0 +1,73 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  Omni ERP — Monorepo .gitignore
+#  Covers: Python/FastAPI backend + Next.js frontend + OS/IDE files
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Environment Variables (NEVER commit secrets) ─────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# ── Frontend: Next.js / Node ──────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/.turbo/
+frontend/dist/
+frontend/.DS_Store
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# ── Backend: Python / FastAPI ─────────────────────────────────────────────────
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/**/*.pyc
+backend/**/*.pyo
+backend/.venv/
+backend/venv/
+backend/.pytest_cache/
+backend/**/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/dist/
+backend/build/
+backend/*.egg-info/
+backend/htmlcov/
+backend/.coverage
+backend/coverage.xml
+
+# ── Alembic ───────────────────────────────────────────────────────────────────
+# Keep migration scripts, but ignore generated artefacts
+backend/alembic/versions/*.pyc
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Uncomment below if you don't want to track compose overrides
+# docker-compose.override.yml
+
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+.idea/
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── OS Files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
