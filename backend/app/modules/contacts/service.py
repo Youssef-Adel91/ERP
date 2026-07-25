@@ -1,7 +1,6 @@
 """
 app/modules/contacts/service.py — Contacts Business Logic
 """
-from __future__ import annotations
 
 import logging
 from uuid import UUID

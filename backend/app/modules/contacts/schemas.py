@@ -1,7 +1,6 @@
 """
 app/modules/contacts/schemas.py — Contacts API Pydantic Schemas
 """
-from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal

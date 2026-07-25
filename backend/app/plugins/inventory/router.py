@@ -27,7 +27,6 @@ Invoice Creation Flow (POST /invoices):
   The router (steps 1–8) and event handler (steps 9–12) share ZERO direct
   imports. They communicate exclusively through the EventBus contract.
 """
-from __future__ import annotations
 
 import logging
 from decimal import Decimal

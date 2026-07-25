@@ -130,7 +130,7 @@ export default function PluginsMarketplacePage() {
     
     // Update store (we construct a dummy PluginInfo object)
     if (!currentStatus) {
-      setActivePlugins([...activePlugins, { id: pluginId, name: pluginName, description: '', version: '', isActive: true }]);
+      setActivePlugins([...activePlugins, { id: pluginId, nameAr: pluginName, nameEn: pluginName, isActive: true }]);
       toast.success(isAr ? `تم تفعيل ${pluginName} بنجاح` : `${pluginName} activated successfully`);
     } else {
       setActivePlugins(activePlugins.filter(p => p.id !== pluginId));

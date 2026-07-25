@@ -5,7 +5,6 @@ These schemas are separate from the SQLModel ORM models to enforce
 a clean API contract. They control exactly what data is accepted
 in requests and what is returned in responses.
 """
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
@@ -13,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.modules.system.models import PlanTier, TenantStatus
+from app.modules.system.models import PlanTier, TenantStatus, UserRole
 
 
 # ── Tenant Registration ───────────────────────────────────────────────────────
@@ -94,14 +93,14 @@ class UserCreateRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=2, max_length=255)
-    roles: list[str] = Field(default_factory=lambda: ["staff"])
+    role: UserRole = Field(default=UserRole.STAFF)
 
 
 class UserUpdateRequest(BaseModel):
     """Partial update of a user's profile."""
 
     full_name: str | None = Field(default=None, max_length=255)
-    roles: list[str] | None = None
+    role: UserRole | None = None
     is_active: bool | None = None
 
 
@@ -112,7 +111,7 @@ class UserResponse(BaseModel):
     tenant_id: UUID
     email: str
     full_name: str
-    roles: list[str]
+    role: UserRole
     is_active: bool
     is_superadmin: bool
     created_at: datetime

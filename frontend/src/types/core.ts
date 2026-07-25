@@ -3,9 +3,10 @@ export type Theme = 'light' | 'dark';
 
 export interface User {
   id: string;
+  tenantId: string;
   name: string;
   email: string;
-  phone: string;
+  phone?: string;
   role: string;
   avatar?: string;
 }

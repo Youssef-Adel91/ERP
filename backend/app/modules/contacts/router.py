@@ -6,7 +6,6 @@ The `get_tenant_db` dependency automatically executes:
     SET search_path TO tenant_{id}, public
 before yielding the session, so all ORM queries hit the correct schema.
 """
-from __future__ import annotations
 
 import logging
 from uuid import UUID

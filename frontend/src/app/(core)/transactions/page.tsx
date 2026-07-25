@@ -106,7 +106,7 @@ export default function TransactionsPage() {
               </button>
             } />
             <DropdownMenuContent align="end" className="w-48">
-              <DialogTrigger render={
+              <DialogTrigger nativeButton={false} render={
                 <DropdownMenuItem className="gap-2 cursor-pointer font-bold" onClick={() => setSelectedTx(item)}>
                   <Eye className="w-4 h-4 text-primary" /> {isAr ? 'عرض التفاصيل' : 'View Details'}
                 </DropdownMenuItem>

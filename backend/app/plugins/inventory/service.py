@@ -16,7 +16,6 @@ the corresponding double-entry journal entry automatically.
 
 This is the CORRECT implementation of the Event-Driven, Decoupled Monolith pattern.
 """
-from __future__ import annotations
 
 import logging
 from decimal import Decimal

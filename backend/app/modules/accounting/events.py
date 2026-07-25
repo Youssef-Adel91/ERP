@@ -23,7 +23,6 @@ Error handling:
   The event does NOT fail the original HTTP request — the simulation endpoint
   already returned 202 Accepted before this handler even started.
 """
-from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
@@ -136,7 +135,7 @@ async def handle_invoice_created(event: DomainEvent) -> None:
     session = await _tenant_session(event.tenant_id)
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # ── INSERT JournalEntry ────────────────────────────────────────────────
         entry = JournalEntry(
@@ -250,7 +249,7 @@ async def handle_payment_received(event: DomainEvent) -> None:
 
     session = await _tenant_session(event.tenant_id)
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         entry = JournalEntry(
             reference=f"JE-{payment_ref}",

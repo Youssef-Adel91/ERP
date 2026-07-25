@@ -1,7 +1,6 @@
 """
 app/modules/system/dependencies.py — Auth Dependencies for FastAPI Routes
 """
-from __future__ import annotations
 
 from typing import Annotated
 from uuid import UUID
@@ -12,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_public_db
 from app.core.security import decode_token
-from app.modules.system.models import User
+from app.modules.system.models import User, UserRole
 
 
 async def get_current_user(
@@ -58,7 +57,7 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def require_roles(*roles: str):
+def require_roles(*roles: UserRole):
     """
     Dependency factory for role-based access control.
 
@@ -67,7 +66,7 @@ def require_roles(*roles: str):
         async def create_entry(...): ...
     """
     async def _check_roles(current_user: CurrentUser) -> User:
-        if not any(role in current_user.roles for role in roles):
+        if current_user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied. Required roles: {list(roles)}.",

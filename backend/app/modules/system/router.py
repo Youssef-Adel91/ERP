@@ -17,7 +17,6 @@ All of this runs in a single logical flow. The schema provisioning uses a
 SEPARATE connection (engine.begin()) from the public-schema session to avoid
 DDL + DML transaction conflicts.
 """
-from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
@@ -38,7 +37,7 @@ from app.core.security import (
     validate_refresh_token,
     verify_password,
 )
-from app.modules.system.models import Tenant, TenantStatus, User
+from app.modules.system.models import Tenant, TenantStatus, User, UserRole
 from app.modules.system.dependencies import CurrentUser
 
 logger = logging.getLogger(__name__)
@@ -167,7 +166,7 @@ async def register(
         email=data.email.lower(),
         hashed_password=hash_password(data.password),
         full_name=data.full_name or data.company_name,
-        roles=["admin"],
+        role=UserRole.OWNER,
     )
     db.add(user)
 
@@ -203,7 +202,7 @@ async def register(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=str(tenant.id),
-        roles=["admin"],
+        roles=[UserRole.OWNER.value],
     )
     refresh_token = await create_refresh_token(
         user_id=user.id,
@@ -268,13 +267,13 @@ async def login(
             detail="Account is deactivated. Contact your administrator.",
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
 
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=str(user.tenant_id),
-        roles=user.roles,
+        role=user.role,
     )
     refresh_token = await create_refresh_token(
         user_id=user.id,
@@ -328,7 +327,7 @@ async def refresh_token(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=tenant_id,
-        roles=user.roles,
+        role=user.role,
     )
 
     return TokenResponse(
@@ -369,6 +368,6 @@ async def get_me(current_user: CurrentUser) -> dict:
         "email": current_user.email,
         "full_name": current_user.full_name,
         "tenant_id": str(current_user.tenant_id),
-        "roles": current_user.roles,
+        "role": current_user.role,
         "is_active": current_user.is_active,
     }

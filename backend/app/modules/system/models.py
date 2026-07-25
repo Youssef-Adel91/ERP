@@ -5,14 +5,14 @@ ALL tables here use `{"schema": "public"}` so SQLAlchemy always
 targets the global public schema, regardless of the session's search_path.
 This is intentional: Tenant and User are global entities, not per-tenant.
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, UniqueConstraint, text
+from sqlalchemy import JSON, String, UniqueConstraint, text, Column
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -66,14 +66,15 @@ class Tenant(SQLModel, table=True):
 
     status: TenantStatus = Field(default=TenantStatus.PENDING_SETUP)
     plan: PlanTier = Field(default=PlanTier.FREE)
+    active_plugins: list[str] = Field(default_factory=list, sa_column=Column(JSON, default=list, nullable=False))
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc).replace(tzinfo=None)},
     )
 
     # Relationships — back-populated from User
@@ -82,6 +83,14 @@ class Tenant(SQLModel, table=True):
 
 # ── User ──────────────────────────────────────────────────────────────────────
 
+
+
+class UserRole(StrEnum):
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    STAFF = "STAFF"
+    SALES = "SALES"
+    ACCOUNTING = "ACCOUNTING"
 
 class User(SQLModel, table=True):
     """
@@ -109,13 +118,13 @@ class User(SQLModel, table=True):
     full_name: str = Field(max_length=255, default="")
 
     # JSON list of role strings: ["admin", "accountant", "sales"]
-    roles: list[str] = Field(default_factory=lambda: ["staff"], sa_type=JSON)
+    role: UserRole = Field(default=UserRole.OWNER, sa_column=Column(sa.Enum(UserRole, name='userrole'), default=UserRole.OWNER, nullable=False))
 
     is_active: bool = Field(default=True)
     is_superadmin: bool = Field(default=False)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
     last_login_at: datetime | None = Field(default=None)

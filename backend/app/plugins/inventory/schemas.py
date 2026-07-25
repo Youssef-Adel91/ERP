@@ -1,7 +1,6 @@
 """
 app/plugins/inventory/schemas.py — Inventory Plugin Pydantic Schemas
 """
-from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal

@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useAppStore } from '@/store/use-app-store';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -177,12 +178,10 @@ export default function SettingsPage() {
                 <h2>{isAr ? 'المستخدمون والصلاحيات' : 'Users and Roles'}</h2>
               </div>
               <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
-                <DialogTrigger render={
-                  <Button className="gap-2 h-9 text-xs shadow bg-sidebar text-sidebar-primary-foreground hover:bg-sidebar/90 font-bold">
-                    <Plus className="w-4 h-4" />
-                    {isAr ? 'إضافة مستخدم' : 'Add User'}
-                  </Button>
-                } />
+                <DialogTrigger className={cn(buttonVariants({ variant: 'default' }), "gap-2 h-9 text-xs shadow bg-sidebar text-sidebar-primary-foreground hover:bg-sidebar/90 font-bold")}>
+                  <Plus className="w-4 h-4" />
+                  {isAr ? 'إضافة مستخدم' : 'Add User'}
+                </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>{isAr ? 'إضافة مستخدم جديد' : 'Add New User'}</DialogTitle>
@@ -289,11 +288,9 @@ export default function SettingsPage() {
         </div>
         <div className="relative z-10 flex gap-3 flex-shrink-0">
           <Dialog open={isLogsOpen} onOpenChange={setIsLogsOpen}>
-            <DialogTrigger render={
-              <Button variant="outline" className="h-11 px-6 font-bold bg-transparent text-white border-sidebar-text hover:bg-sidebar-accent hover:text-white">
-                {isAr ? 'عرض السجلات' : 'View Logs'}
-              </Button>
-            } />
+            <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "h-11 px-6 font-bold bg-transparent text-white border-sidebar-text hover:bg-sidebar-accent hover:text-white")}>
+              {isAr ? 'عرض السجلات' : 'View Logs'}
+            </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{isAr ? 'سجلات النظام (آخر 24 ساعة)' : 'System Logs (Last 24h)'}</DialogTitle>
@@ -313,11 +310,9 @@ export default function SettingsPage() {
           </Dialog>
 
           <Dialog open={isSecurityOpen} onOpenChange={setIsSecurityOpen}>
-            <DialogTrigger render={
-              <Button variant="outline" className="h-11 px-6 font-bold bg-transparent text-white border-sidebar-text hover:bg-sidebar-accent hover:text-white">
-                {isAr ? 'إعدادات الأمان' : 'Security Settings'}
-              </Button>
-            } />
+            <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "h-11 px-6 font-bold bg-transparent text-white border-sidebar-text hover:bg-sidebar-accent hover:text-white")}>
+              {isAr ? 'إعدادات الأمان' : 'Security Settings'}
+            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{isAr ? 'إعدادات الأمان المتقدمة' : 'Advanced Security Settings'}</DialogTitle>

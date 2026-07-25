@@ -19,7 +19,6 @@ Double-Entry Enforcement:
   Layer 3 — Database:    CHECK constraint (debit XOR credit) per line.
   Layer 4 — DB Trigger:  `enforce_journal_balance` (added via Alembic migration).
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -76,7 +75,7 @@ class Account(SQLModel, table=True):
     is_system: bool = Field(default=False)           # Cannot be deleted
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
 
@@ -125,7 +124,7 @@ class JournalEntry(SQLModel, table=True):
     posted_by: UUID | None = Field(default=None)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
     posted_at: datetime | None = Field(default=None)
@@ -169,8 +168,6 @@ class TransactionLine(SQLModel, table=True):
             "AND (debit > 0 OR credit > 0)",
             name="ck_transaction_lines_debit_xor_credit",
         ),
-        Index("ix_transaction_lines_entry", "journal_entry_id"),
-        Index("ix_transaction_lines_account", "account_code"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)

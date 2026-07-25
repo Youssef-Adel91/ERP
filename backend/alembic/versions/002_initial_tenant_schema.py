@@ -201,9 +201,9 @@ def upgrade() -> None:
     op.create_index("ix_contact_relationships_source", "contact_relationships", ["source_contact_id"])
     op.create_index("ix_contact_relationships_target", "contact_relationships", ["target_contact_id"])
 
-    # ── products ──────────────────────────────────────────────────────────────
+    # ── items ─────────────────────────────────────────────────────────────────
     op.create_table(
-        "products",
+        "items",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("sku", sa.String(100), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
@@ -218,45 +218,18 @@ def upgrade() -> None:
         sa.Column("created_by", UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.UniqueConstraint("sku", name="uq_products_sku"),
+        sa.UniqueConstraint("sku", name="uq_items_sku"),
         sa.CheckConstraint(
             "unit_cost >= 0 AND unit_price >= 0 AND quantity_on_hand >= 0",
-            name="ck_products_non_negative",
+            name="ck_items_non_negative",
         ),
     )
 
-    # ── sale_invoices ─────────────────────────────────────────────────────────
-    op.create_table(
-        "sale_invoices",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("invoice_number", sa.String(50), nullable=False),
-        sa.Column("customer_contact_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("status", sa.String(20), nullable=False, server_default="draft"),
-        sa.Column("total_amount", sa.Numeric(18, 4), nullable=False, server_default="0"),
-        sa.Column("notes", sa.String(2000), nullable=True),
-        sa.Column("created_by", UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.UniqueConstraint("invoice_number", name="uq_sale_invoices_number"),
-    )
-    op.create_index("ix_sale_invoices_status", "sale_invoices", ["status"])
-    op.create_index("ix_sale_invoices_customer", "sale_invoices", ["customer_contact_id"])
 
-    # ── sale_invoice_items ────────────────────────────────────────────────────
-    op.create_table(
-        "sale_invoice_items",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("invoice_id", UUID(as_uuid=True), sa.ForeignKey("sale_invoices.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("quantity", sa.Numeric(18, 4), nullable=False),
-        sa.Column("unit_price", sa.Numeric(18, 4), nullable=False),
-        sa.Column("total_price", sa.Numeric(18, 4), nullable=False),
-    )
 
 
 def downgrade() -> None:
-    op.drop_table("sale_invoice_items")
-    op.drop_table("sale_invoices")
-    op.drop_table("products")
+    op.drop_table("items")
     op.drop_table("contact_relationships")
     op.drop_table("contacts")
     op.execute("DROP TRIGGER IF EXISTS trg_enforce_journal_balance ON transaction_lines;")

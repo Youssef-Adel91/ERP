@@ -4,7 +4,6 @@ app/modules/accounting/router.py — Accounting Module API Routes
 All endpoints require a valid Bearer token. The `get_tenant_db` dependency
 sets `search_path = tenant_{id}` so all queries hit the correct schema.
 """
-from __future__ import annotations
 
 import logging
 from uuid import UUID

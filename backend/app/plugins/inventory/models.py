@@ -8,7 +8,6 @@ Dependency order for CREATE TABLE (FKs must come after referenced tables):
   1. items       (no FK dependencies in tenant schema)
   2. invoices    (FK → contacts.id — contacts table must exist first)
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -44,7 +43,6 @@ class Item(SQLModel, table=True):
             "price >= 0 AND quantity_on_hand >= 0",
             name="ck_items_non_negative",
         ),
-        Index("ix_items_name", "name"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -76,7 +74,7 @@ class Item(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
 
@@ -105,7 +103,6 @@ class Invoice(SQLModel, table=True):
     __tablename__ = "invoices"
     __table_args__ = (
         UniqueConstraint("invoice_number", name="uq_invoices_number"),
-        Index("ix_invoices_contact", "contact_id"),
         Index("ix_invoices_status", "status"),
     )
 
@@ -128,7 +125,7 @@ class Invoice(SQLModel, table=True):
 
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
 

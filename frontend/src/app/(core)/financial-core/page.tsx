@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useAppStore } from '@/store/use-app-store';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { 
@@ -178,12 +179,10 @@ export default function FinancialCorePage() {
         </div>
         <div className="flex gap-3">
           <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-            <DialogTrigger render={
-              <Button variant="outline" className="gap-2 h-11 border-border shadow-sm font-bold text-foreground hover:bg-muted transition-colors">
+            <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "gap-2 h-11 border-border shadow-sm font-bold text-foreground hover:bg-muted transition-colors")}>
                 <FileUp className="w-5 h-5" />
                 {isAr ? 'استيراد بيانات' : 'Import Data'}
-              </Button>
-            } />
+            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{isAr ? 'استيراد قيود محاسبية' : 'Import Journal Entries'}</DialogTitle>
@@ -211,12 +210,10 @@ export default function FinancialCorePage() {
           </Dialog>
           
           <Dialog open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen}>
-            <DialogTrigger render={
-              <Button className="gap-2 h-11 px-6 font-bold shadow hover:bg-accent-hover transition-colors">
+            <DialogTrigger className={cn(buttonVariants({ variant: 'default' }), "gap-2 h-11 px-6 font-bold shadow hover:bg-accent-hover transition-colors")}>
                 <Plus className="w-5 h-5" />
                 {isAr ? 'إضافة قيد محاسبي' : 'Add Journal Entry'}
-              </Button>
-            } />
+            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{isAr ? 'إضافة قيد محاسبي جديد' : 'Add New Journal Entry'}</DialogTitle>
@@ -332,11 +329,9 @@ export default function FinancialCorePage() {
             </div>
             
             <Dialog open={isTransferOpen} onOpenChange={setIsTransferOpen}>
-              <DialogTrigger render={
-                <Button variant="outline" className="w-full mt-4 border-border font-bold text-foreground hover:bg-muted transition-colors">
+              <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "w-full mt-4 border-border font-bold text-foreground hover:bg-muted transition-colors")}>
                   {isAr ? 'تحويل بين الحسابات' : 'Transfer between accounts'}
-                </Button>
-              } />
+              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{isAr ? 'تحويل نقدي' : 'Cash Transfer'}</DialogTitle>

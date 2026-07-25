@@ -4,7 +4,6 @@ app/modules/system/service.py — System Business Logic
 Handles tenant registration, user management, and authentication.
 All operations on global tables go through this service layer.
 """
-from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
@@ -27,6 +26,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.system.models import (
+    UserRole,
     PlanTier,
     Subscription,
     Tenant,
@@ -128,7 +128,7 @@ async def register_tenant(
         email=data.admin_email,
         hashed_password=hash_password(data.admin_password),
         full_name=data.admin_full_name,
-        roles=["admin"],
+        role=UserRole.OWNER,
     )
     db.add(admin_user)
 
@@ -160,7 +160,7 @@ async def register_tenant(
     access_token = create_access_token(
         user_id=admin_user.id,
         tenant_id=str(tenant.id),
-        roles=admin_user.roles,
+        role=admin_user.role,
     )
     refresh_token = await create_refresh_token(
         user_id=admin_user.id,
@@ -218,7 +218,7 @@ async def login(
         raise AuthenticationError("Account is deactivated. Contact your administrator.")
 
     # Update last login timestamp
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
 
     # Issue tokens
@@ -227,7 +227,7 @@ async def login(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=str(user.tenant_id),
-        roles=user.roles,
+        role=user.role,
     )
     refresh_token = await create_refresh_token(
         user_id=user.id,
@@ -272,7 +272,7 @@ async def refresh_access_token(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=tenant_id,
-        roles=user.roles,
+        role=user.role,
     )
 
     return TokenResponse(
@@ -300,7 +300,7 @@ async def create_user(
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
-        roles=data.roles,
+        role=data.role,
     )
     db.add(user)
     await db.commit()

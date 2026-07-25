@@ -25,7 +25,6 @@ NEO4J GRAPH MIGRATION NOTES (Future Sprint — Trust Network)
 #   0.700 → 1.000  High     (reject COD / require prepayment)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -68,7 +67,6 @@ class Contact(SQLModel, table=True):
     __tablename__ = "contacts"
     __table_args__ = (
         Index("ix_contacts_type", "contact_type"),
-        Index("ix_contacts_phone", "phone"),
         Index("ix_contacts_status", "status"),
         CheckConstraint(
             "cod_risk_score >= 0.000 AND cod_risk_score <= 1.000",
@@ -106,12 +104,12 @@ class Contact(SQLModel, table=True):
     # Audit
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc).replace(tzinfo=None)},
     )
 
     # Relationship to Invoices (back-populated from inventory plugin)

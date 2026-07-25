@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/store/use-app-store';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -23,6 +23,7 @@ import {
   Trash,
   Eye
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import {
   Dialog,
@@ -234,12 +235,13 @@ export default function ContactsPage() {
               <MoreVertical className="w-5 h-5" />
             </button>
           } />
-            <DialogTrigger render={
+          <DropdownMenuContent align="end">
+            <DialogTrigger nativeButton={false} render={
               <DropdownMenuItem className="gap-2 cursor-pointer font-bold">
                 <Eye className="w-4 h-4 text-primary" /> {isAr ? 'عرض التفاصيل' : 'View Details'}
               </DropdownMenuItem>
             } />
-            <DialogTrigger render={
+            <DialogTrigger nativeButton={false} render={
               <DropdownMenuItem className="gap-2 cursor-pointer font-bold">
                 <Edit className="w-4 h-4 text-warning-foreground" /> {isAr ? 'تعديل السجل' : 'Edit Record'}
               </DropdownMenuItem>
@@ -316,12 +318,10 @@ export default function ContactsPage() {
         </div>
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
-            <Button className="gap-2 font-bold h-11 px-6 text-primary-foreground shadow hover:bg-accent-hover transition-colors">
-              <Plus className="w-5 h-5" />
-              {isAr ? 'إضافة جهة اتصال' : 'Add Contact'}
-            </Button>
-          } />
+          <DialogTrigger className={cn(buttonVariants({ variant: 'default' }), "gap-2 font-bold h-11 px-6 text-primary-foreground shadow hover:bg-accent-hover transition-colors")}>
+            <Plus className="w-5 h-5" />
+            {isAr ? 'إضافة جهة اتصال' : 'Add Contact'}
+          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{isAr ? 'إضافة جهة اتصال جديدة' : 'Add New Contact'}</DialogTitle>
@@ -414,12 +414,10 @@ export default function ContactsPage() {
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
             <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
-              <DialogTrigger render={
-                <Button variant="outline" className="gap-2 w-full sm:w-auto h-10 border-border text-foreground">
+              <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "gap-2 w-full sm:w-auto h-10 border-border text-foreground")}>
                   <Filter className="w-4 h-4" />
                   {isAr ? 'تصفية متقدمة' : 'Advanced Filter'}
-                </Button>
-              } />
+              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{isAr ? 'خيارات التصفية المتقدمة' : 'Advanced Filter Options'}</DialogTitle>

@@ -4,7 +4,6 @@ app/modules/accounting/service.py — Accounting Business Logic
 All functions accept an AsyncSession that has already had its search_path
 set by the get_tenant_db dependency. No raw SQL schema references needed.
 """
-from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
@@ -237,7 +236,7 @@ async def post_journal_entry(
 
     entry.status = JournalEntryStatus.POSTED
     entry.posted_by = posted_by
-    entry.posted_at = datetime.now(timezone.utc)
+    entry.posted_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     await db.commit()
     await db.refresh(entry)

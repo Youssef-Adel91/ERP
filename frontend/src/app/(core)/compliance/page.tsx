@@ -2,7 +2,8 @@
 
 import { useAppStore } from '@/store/use-app-store';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Shield, ShieldCheck, AlertTriangle, FileText, CheckCircle2, MoreVertical, ShieldAlert } from 'lucide-react';
@@ -69,11 +70,9 @@ export default function CompliancePage() {
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <Dialog open={isPoliciesOpen} onOpenChange={setIsPoliciesOpen}>
-              <DialogTrigger render={
-                <Button variant="outline" className="border-sidebar-text text-white hover:bg-sidebar-accent hover:text-white bg-transparent h-11 font-bold">
+              <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "border-sidebar-text text-white hover:bg-sidebar-accent hover:text-white bg-transparent h-11 font-bold")}>
                   {isAr ? 'مراجعة السياسات' : 'Review Policies'}
-                </Button>
-              } />
+              </DialogTrigger>
               <DialogContent className="max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>{isAr ? 'سياسات الأمان والامتثال التنظيمي' : 'Security & Compliance Policies'}</DialogTitle>
@@ -238,11 +237,9 @@ export default function CompliancePage() {
                 ))}
               </div>
               <Dialog open={isLogOpen} onOpenChange={setIsLogOpen}>
-                <DialogTrigger render={
-                  <Button variant="outline" className="w-full mt-8 font-bold border-foreground text-foreground hover:bg-muted transition-colors">
+                <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "w-full mt-8 font-bold border-foreground text-foreground hover:bg-muted transition-colors")}>
                     {isAr ? 'عرض السجل الكامل' : 'View Full Log'}
-                  </Button>
-                } />
+                </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>{isAr ? 'سجل نشاط الامتثال' : 'Compliance Activity Log'}</DialogTitle>

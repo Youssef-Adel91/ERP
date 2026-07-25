@@ -2,8 +2,9 @@
 
 import { useAppStore } from '@/store/use-app-store';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { 
   FileText, 
@@ -95,11 +96,9 @@ export default function ReportsPage() {
           </div>
           <div className="flex gap-3 mt-4 sm:mt-0">
             <Dialog open={isDateOpen} onOpenChange={setIsDateOpen}>
-              <DialogTrigger render={
-                <Button variant="outline" className="h-11 font-bold border-border shadow-sm text-foreground hover:bg-muted">
-                  {isAr ? 'تغيير التاريخ' : 'Change Date'}
-                </Button>
-              } />
+              <DialogTrigger className={cn(buttonVariants({ variant: 'outline' }), "h-11 font-bold border-border shadow-sm text-foreground hover:bg-muted")}>
+                {isAr ? 'تغيير التاريخ' : 'Change Date'}
+              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{isAr ? 'تحديد الفترة الزمنية' : 'Select Time Period'}</DialogTitle>
@@ -160,11 +159,9 @@ export default function ReportsPage() {
                   <Download className="w-5 h-5" />
                 </Button>
                 <Dialog>
-                  <DialogTrigger render={
-                    <Button className="h-11 flex-1 font-bold shadow-sm" onClick={() => setPreviewReport(report)}>
-                      {isAr ? 'عرض التقرير' : 'View Report'}
-                    </Button>
-                  } />
+                  <DialogTrigger className={cn(buttonVariants({ variant: 'default' }), "h-11 flex-1 font-bold shadow-sm")} onClick={() => setPreviewReport(report)}>
+                    {isAr ? 'عرض التقرير' : 'View Report'}
+                  </DialogTrigger>
                   <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
@@ -187,7 +184,7 @@ export default function ReportsPage() {
         ))}
 
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger render={
+          <DialogTrigger nativeButton={false} render={
             <Card className="border-border border-dashed shadow-none bg-muted/10 hover:bg-muted/30 transition-colors cursor-pointer h-full min-h-[300px]">
               <CardContent className="p-6 flex flex-col items-center justify-center h-full text-center">
                 <div className="w-16 h-16 rounded-xl bg-muted border border-border flex items-center justify-center mb-4 text-foreground shadow-sm">
