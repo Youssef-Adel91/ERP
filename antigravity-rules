@@ -1,0 +1,25 @@
+Always use TypeScript in strict mode.
+Always use Next.js App Router (not Pages Router).
+Always use Tailwind CSS with the tokens defined in tailwind.config.ts —
+never hardcode hex colors, always use the semantic token names
+(accent, ink, paper, sidebar, success/danger/warning).
+Always use Shadcn UI for base components (buttons, inputs, dialogs).
+Use Zustand for lightweight global state, React Query for all API/data
+fetching and caching.
+Use React Hook Form with Zod for every form — never rely on native
+browser validation.
+This app is Arabic-first (RTL) with English as a secondary language (LTR)
+via toggle. Default <html dir="rtl" lang="ar">. Use logical Tailwind
+spacing (ms-/me-/ps-/pe-) instead of ml-/mr-/pl-/pr- everywhere, so layouts
+mirror correctly when switching to English.
+Follow the folder structure defined in frontend_architecture_guide-v2.md
+exactly: app/(auth), app/(core), app/(plugins), components/ui,
+components/layout, components/shared, lib/, store/, types/.
+Wrap every route and every plugin component in an Error Boundary.
+Use next/dynamic for lazy-loading any plugin screen or heavy component.
+Never build a new <Table> or <Form> from scratch — always extend the
+shared <DataTable /> component once it exists.
+Numeric and currency figures always use font-mono and render LTR
+(dir="ltr") even inside RTL layout.
+Never duplicate the Sidebar or Navbar per screen — always import the
+shared components/layout/Sidebar.tsx and components/layout/Navbar.tsx.
