@@ -119,7 +119,7 @@ async def list_items(
         filters.append(Item.category == category)
 
     result = await db.execute(
-        select(Item).where(*filters).order_by(Item.name).limit(limit).offset(offset)
+        select(Item).where(*filters).order_by(Item.name).limit(limit).offset(offset),
     )
     return [ItemResponse.model_validate(i) for i in result.scalars().all()]
 
@@ -186,7 +186,7 @@ async def create_invoice(
 
     # ── Step 1: Validate Contact exists ───────────────────────────────────────
     contact_result = await db.execute(
-        select(Contact).where(Contact.id == data.contact_id)
+        select(Contact).where(Contact.id == data.contact_id),
     )
     contact = contact_result.scalar_one_or_none()
     if not contact:
@@ -198,7 +198,7 @@ async def create_invoice(
     # ── Step 2: Validate and resolve all Items ────────────────────────────────
     item_ids = [line.item_id for line in data.lines]
     items_result = await db.execute(
-        select(Item).where(Item.id.in_(item_ids), Item.is_active.is_(True))
+        select(Item).where(Item.id.in_(item_ids), Item.is_active.is_(True)),
     )
     items_map: dict[UUID, Item] = {
         item.id: item for item in items_result.scalars().all()
@@ -315,7 +315,7 @@ async def list_invoices(
         .where(*filters)
         .order_by(Invoice.created_at.desc())
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return [InvoiceResponse.model_validate(inv) for inv in result.scalars().all()]
 

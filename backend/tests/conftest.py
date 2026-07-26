@@ -8,32 +8,25 @@ Provides:
 """
 from __future__ import annotations
 
-import asyncio
+# Override settings BEFORE importing the app
+import os
 from collections.abc import AsyncGenerator
-from decimal import Decimal
-from typing import Any
 from uuid import uuid4
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
-# Override settings BEFORE importing the app
-import os
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
 os.environ["EVENT_BUS_BACKEND"] = "memory"
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-minimum!!"
 os.environ["ENVIRONMENT"] = "development"
 
-from app.core.database import AsyncSessionLocal, get_public_db, get_tenant_db  # noqa: E402
-from app.core.event_bus import InMemoryEventBus, _bus_instance  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
-from app.main import app  # noqa: E402
-
+from app.core.database import get_public_db, get_tenant_db
+from app.core.security import hash_password
+from app.main import app
 
 # ── Test Database Setup ───────────────────────────────────────────────────────
 
@@ -43,6 +36,7 @@ test_engine = create_async_engine(
     TEST_DB_URL,
     connect_args={"check_same_thread": False},
     future=True,
+    execution_options={"schema_translate_map": {"tenant": None, "public": None}},
 )
 
 TestSessionLocal = async_sessionmaker(
@@ -52,30 +46,24 @@ TestSessionLocal = async_sessionmaker(
 )
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(autouse=True)
 async def setup_database():
-    """Create all tables in the in-memory test database."""
+    """Create all tables in the in-memory test database for each test."""
     # Import all models to register them with SQLModel.metadata
-    import app.modules.system.models
-    import app.modules.accounting.models
-    import app.modules.contacts.models
-    import app.plugins.inventory.models
 
     async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        conn_translated = await conn.execution_options(schema_translate_map={"tenant": None, "public": None})
+        await conn_translated.run_sync(SQLModel.metadata.drop_all)
+        await conn_translated.run_sync(SQLModel.metadata.create_all)
 
     yield
-
-    async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
 
 
 @pytest_asyncio.fixture
 async def db_session(setup_database) -> AsyncGenerator[AsyncSession, None]:
-    """Provide a clean async database session per test (rolls back after each test)."""
+    """Provide a clean async database session per test."""
     async with TestSessionLocal() as session:
         yield session
-        await session.rollback()
 
 
 # ── Test Tenant / User Fixtures ───────────────────────────────────────────────
@@ -88,7 +76,11 @@ TEST_ADMIN_ID = uuid4()
 @pytest_asyncio.fixture
 async def seed_tenant_and_users(db_session: AsyncSession):
     """Seed a test tenant, admin user, and staff user into the test DB."""
-    from app.modules.system.models import Tenant, User, Subscription, TenantStatus, PlanTier
+    from app.modules.system.models import PlanTier, Tenant, TenantStatus, User, UserRole
+
+    tenant = await db_session.get(Tenant, TEST_TENANT_ID)
+    if tenant:
+        return
 
     tenant = Tenant(
         id=TEST_TENANT_ID,
@@ -100,8 +92,7 @@ async def seed_tenant_and_users(db_session: AsyncSession):
     )
     db_session.add(tenant)
 
-    subscription = Subscription(tenant_id=TEST_TENANT_ID)
-    db_session.add(subscription)
+
 
     admin_user = User(
         id=TEST_ADMIN_ID,
@@ -109,7 +100,7 @@ async def seed_tenant_and_users(db_session: AsyncSession):
         email="admin@test.com",
         hashed_password=hash_password("AdminPass123"),
         full_name="Test Admin",
-        roles=["admin"],
+        role=UserRole.ADMIN,
     )
     db_session.add(admin_user)
 
@@ -119,7 +110,7 @@ async def seed_tenant_and_users(db_session: AsyncSession):
         email="staff@test.com",
         hashed_password=hash_password("StaffPass123"),
         full_name="Test Staff",
-        roles=["staff"],
+        role=UserRole.STAFF,
     )
     db_session.add(staff_user)
 
@@ -132,7 +123,13 @@ async def seed_tenant_and_users(db_session: AsyncSession):
 @pytest_asyncio.fixture
 async def seed_chart_of_accounts(db_session: AsyncSession, seed_tenant_and_users):
     """Create standard Chart of Accounts for accounting tests."""
+    from sqlalchemy import select
+
     from app.modules.accounting.models import Account, AccountType
+    existing_accounts = await db_session.execute(select(Account))
+    if existing_accounts.scalars().first():
+        accounts_list = (await db_session.execute(select(Account))).scalars().all()
+        return {a.code: a for a in accounts_list}
 
     accounts = [
         Account(id=uuid4(), code="1110", name="Cash",                account_type=AccountType.ASSET),

@@ -97,12 +97,12 @@ async def create_sales_invoice(
     await db.refresh(invoice)
 
     # 6. EVENT BUS INTEGRATION
-    from app.core.event_bus import get_event_bus, DomainEvent
+    from app.core.event_bus import DomainEvent, get_event_bus
     event_bus = get_event_bus()
     event = DomainEvent(
         event_type="sales_invoice.confirmed",
         tenant_id=tenant_id,
-        payload={"invoice_id": str(invoice.id), "total": str(invoice_total)}
+        payload={"invoice_id": str(invoice.id), "total": str(invoice_total)},
     )
     await event_bus.publish(event)
     # This triggers Accounting Core to create Journal Entry (AR vs. Revenue)
@@ -135,6 +135,6 @@ async def list_sales_invoices(
         .where(*filters)
         .order_by(SalesInvoice.created_at.desc())
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return [SalesInvoiceResponse.model_validate(inv) for inv in result.scalars().all()]

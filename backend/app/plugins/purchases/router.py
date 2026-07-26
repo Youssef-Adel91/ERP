@@ -31,7 +31,7 @@ async def create_purchase_invoice(
 ) -> PurchaseInvoiceResponse:
     # 1. Validate Supplier
     contact_result = await db.execute(
-        select(Contact).where(Contact.id == data.supplier_id, Contact.contact_type == ContactType.SUPPLIER)
+        select(Contact).where(Contact.id == data.supplier_id, Contact.contact_type == ContactType.SUPPLIER),
     )
     supplier = contact_result.scalar_one_or_none()
     if not supplier:
@@ -92,12 +92,12 @@ async def create_purchase_invoice(
     await db.refresh(invoice)
 
     # EVENT BUS INTEGRATION
-    from app.core.event_bus import get_event_bus, DomainEvent
+    from app.core.event_bus import DomainEvent, get_event_bus
     event_bus = get_event_bus()
     event = DomainEvent(
         event_type="purchase_invoice.confirmed",
         tenant_id=request.state.tenant_id or str(current_user.tenant_id),
-        payload={"invoice_id": str(invoice.id), "total": str(invoice_total)}
+        payload={"invoice_id": str(invoice.id), "total": str(invoice_total)},
     )
     await event_bus.publish(event)
     # This triggers Accounting Core to create Journal Entry (Inventory vs. AP)
@@ -120,6 +120,6 @@ async def list_purchase_invoices(
         select(PurchaseInvoice)
         .order_by(PurchaseInvoice.created_at.desc())
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return [PurchaseInvoiceResponse.model_validate(inv) for inv in result.scalars().all()]

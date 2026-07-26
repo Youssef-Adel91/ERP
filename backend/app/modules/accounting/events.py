@@ -25,15 +25,12 @@ Error handling:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.database import AsyncSessionLocal
-from app.core.event_bus import DomainEvent, get_event_bus
+from app.core.db.database import tenant_session
+from app.core.events.event_bus import DomainEvent, get_event_bus
 from app.modules.accounting.models import JournalEntry, JournalEntryStatus, TransactionLine
 
 logger = logging.getLogger(__name__)
@@ -42,28 +39,13 @@ logger = logging.getLogger(__name__)
 event_bus = get_event_bus()
 
 
-# ── Helper: tenant-scoped session (used outside HTTP request context) ─────────
-
-
-async def _tenant_session(tenant_id: str) -> AsyncSession:
-    """
-    Create an AsyncSession scoped to a specific tenant schema.
-
-    Unlike get_tenant_db() (which reads from request.state), this function
-    is safe to call from asyncio.create_task (no Request object available).
-    """
-    schema_name = f"tenant_{tenant_id.replace('-', '_')}"
-    session = AsyncSessionLocal()
-    await session.execute(text(f'SET search_path TO "{schema_name}", public'))
-    return session
-
 
 def _require_payload(payload: dict, key: str, event_id: str) -> str:
     """Extract a required key from an event payload or raise ValueError."""
     value = payload.get(key)
     if value is None:
         raise ValueError(
-            f"[event_id={event_id}] Missing required payload key: '{key}'"
+            f"[event_id={event_id}] Missing required payload key: '{key}'",
         )
     return str(value)
 
@@ -132,81 +114,68 @@ async def handle_invoice_created(event: DomainEvent) -> None:
         return
 
     # ── Open tenant-scoped DB session ─────────────────────────────────────────
-    session = await _tenant_session(event.tenant_id)
+    async with tenant_session(event.tenant_id) as session:
+        try:
+            now = datetime.now(UTC).replace(tzinfo=None)
 
-    try:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+            # ── INSERT JournalEntry ────────────────────────────────────────────────
+            entry = JournalEntry(
+                reference=f"JE-{invoice_number}",
+                description=f"Sales invoice for {customer} — {invoice_number}",
+                status=JournalEntryStatus.POSTED,   # Auto-post event-driven entries
+                source_type="invoice",
+                source_id=UUID(source_id_str) if source_id_str else None,
+                created_by=(
+                    UUID(payload["created_by_user_id"])
+                    if payload.get("created_by_user_id")
+                    else None
+                ),
+                posted_at=now,
+            )
+            session.add(entry)
+            await session.flush()  # Materialise entry.id for FK reference in lines
 
-        # ── INSERT JournalEntry ────────────────────────────────────────────────
-        entry = JournalEntry(
-            reference=f"JE-{invoice_number}",
-            description=f"Sales invoice for {customer} — {invoice_number}",
-            status=JournalEntryStatus.POSTED,   # Auto-post event-driven entries
-            source_type="invoice",
-            source_id=UUID(source_id_str) if source_id_str else None,
-            created_by=(
-                UUID(payload["created_by_user_id"])
-                if payload.get("created_by_user_id")
-                else None
-            ),
-            posted_by=(
-                UUID(payload["created_by_user_id"])
-                if payload.get("created_by_user_id")
-                else None
-            ),
-            posted_at=now,
-        )
-        session.add(entry)
-        await session.flush()  # Materialise entry.id for FK reference in lines
+            # ── INSERT TransactionLine 1: DEBIT Accounts Receivable ───────────────
+            debit_line = TransactionLine(
+                journal_entry_id=entry.id,
+                account_code=ar_code,
+                account_name="Accounts Receivable",
+                debit=amount,
+                credit=Decimal("0.0000"),
+                description=f"Receivable: {customer} / {invoice_number}",
+            )
+            session.add(debit_line)
 
-        # ── INSERT TransactionLine 1: DEBIT Accounts Receivable ───────────────
-        debit_line = TransactionLine(
-            journal_entry_id=entry.id,
-            account_code=ar_code,
-            account_name="Accounts Receivable",
-            debit=amount,
-            credit=Decimal("0.0000"),
-            description=f"Receivable: {customer} / {invoice_number}",
-        )
-        session.add(debit_line)
+            # ── INSERT TransactionLine 2: CREDIT Sales Revenue ────────────────────
+            credit_line = TransactionLine(
+                journal_entry_id=entry.id,
+                account_code=rev_code,
+                account_name="Sales Revenue",
+                debit=Decimal("0.0000"),
+                credit=amount,
+                description=f"Revenue recognized: {invoice_number}",
+            )
+            session.add(credit_line)
 
-        # ── INSERT TransactionLine 2: CREDIT Sales Revenue ────────────────────
-        credit_line = TransactionLine(
-            journal_entry_id=entry.id,
-            account_code=rev_code,
-            account_name="Sales Revenue",
-            debit=Decimal("0.0000"),
-            credit=amount,
-            description=f"Revenue recognized: {invoice_number}",
-        )
-        session.add(credit_line)
+            logger.info(
+                "✅ Journal entry '%s' (id=%s) committed to schema 'tenant_%s' | "
+                "DR %s → AR(%s) | CR %s → REV(%s)",
+                entry.reference,
+                entry.id,
+                event.tenant_id.replace("-", "_"),
+                amount,
+                ar_code,
+                amount,
+                rev_code,
+            )
 
-        # ── COMMIT ────────────────────────────────────────────────────────────
-        await session.commit()
-
-        logger.info(
-            "✅ Journal entry '%s' (id=%s) committed to schema 'tenant_%s' | "
-            "DR %s → AR(%s) | CR %s → REV(%s)",
-            entry.reference,
-            entry.id,
-            event.tenant_id.replace("-", "_"),
-            amount,
-            ar_code,
-            amount,
-            rev_code,
-        )
-
-    except Exception:
-        await session.rollback()
-        logger.exception(
-            "❌ DB error while processing invoice.created (event_id=%s, tenant=%s)",
-            event_id_str,
-            event.tenant_id,
-        )
-        raise  # Re-raise so _safe_handler_call logs the full traceback
-
-    finally:
-        await session.close()
+        except Exception:
+            logger.exception(
+                "❌ DB error while processing invoice.created (event_id=%s, tenant=%s)",
+                event_id_str,
+                event.tenant_id,
+            )
+            raise  # Re-raise so _safe_handler_call logs the full traceback
 
 
 # ── Handler: payment.received ─────────────────────────────────────────────────
@@ -247,48 +216,44 @@ async def handle_payment_received(event: DomainEvent) -> None:
         logger.error("❌ handle_payment_received aborted: %s", exc)
         return
 
-    session = await _tenant_session(event.tenant_id)
-    try:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with tenant_session(event.tenant_id) as session:
+        try:
+            now = datetime.now(UTC).replace(tzinfo=None)
 
-        entry = JournalEntry(
-            reference=f"JE-{payment_ref}",
-            description=f"Cash received: {payment_ref}",
-            status=JournalEntryStatus.POSTED,
-            source_type="payment",
-            posted_at=now,
-        )
-        session.add(entry)
-        await session.flush()
+            entry = JournalEntry(
+                reference=f"JE-{payment_ref}",
+                description=f"Cash received: {payment_ref}",
+                status=JournalEntryStatus.POSTED,
+                source_type="payment",
+                posted_at=now,
+            )
+            session.add(entry)
+            await session.flush()
 
-        # DR Cash
-        session.add(TransactionLine(
-            journal_entry_id=entry.id,
-            account_code=cash_code,
-            account_name="Cash & Cash Equivalents",
-            debit=amount,
-            credit=Decimal("0.0000"),
-            description=f"Cash received for {payment_ref}",
-        ))
-        # CR Accounts Receivable
-        session.add(TransactionLine(
-            journal_entry_id=entry.id,
-            account_code=ar_code,
-            account_name="Accounts Receivable",
-            debit=Decimal("0.0000"),
-            credit=amount,
-            description=f"Receivable cleared for {payment_ref}",
-        ))
+            # DR Cash
+            session.add(TransactionLine(
+                journal_entry_id=entry.id,
+                account_code=cash_code,
+                account_name="Cash & Cash Equivalents",
+                debit=amount,
+                credit=Decimal("0.0000"),
+                description=f"Cash received for {payment_ref}",
+            ))
+            # CR Accounts Receivable
+            session.add(TransactionLine(
+                journal_entry_id=entry.id,
+                account_code=ar_code,
+                account_name="Accounts Receivable",
+                debit=Decimal("0.0000"),
+                credit=amount,
+                description=f"Receivable cleared for {payment_ref}",
+            ))
 
-        await session.commit()
-        logger.info(
-            "✅ Payment journal entry '%s' committed (tenant=%s)",
-            entry.reference,
-            event.tenant_id,
-        )
-    except Exception:
-        await session.rollback()
-        logger.exception("❌ DB error in handle_payment_received (event_id=%s)", event_id_str)
-        raise
-    finally:
-        await session.close()
+            logger.info(
+                "✅ Payment journal entry '%s' committed (tenant=%s)",
+                entry.reference,
+                event.tenant_id,
+            )
+        except Exception:
+            logger.exception("❌ DB error in handle_payment_received (event_id=%s)", event_id_str)
+            raise

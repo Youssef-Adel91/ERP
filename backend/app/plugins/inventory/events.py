@@ -6,24 +6,20 @@ data, such as creating the default Main Warehouse.
 """
 
 import logging
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import AsyncSessionLocal
-from app.core.event_bus import DomainEvent, get_event_bus
-from app.plugins.inventory.models import Warehouse
+from app.core.db.database import tenant_session
+from app.core.events.event_bus import DomainEvent, get_event_bus
+
+try:
+    from app.plugins.inventory.models import Warehouse
+except ImportError:
+    Warehouse = None  # type: ignore[assignment,misc]  # Model not yet created
 
 logger = logging.getLogger(__name__)
 
 event_bus = get_event_bus()
 
 
-async def _tenant_session(tenant_id: str) -> AsyncSession:
-    """Create an AsyncSession scoped to a specific tenant schema."""
-    schema_name = f"tenant_{tenant_id.replace('-', '_')}"
-    session = AsyncSessionLocal()
-    await session.execute(text(f'SET search_path TO "{schema_name}", public'))
-    return session
 
 
 @event_bus.subscribe("tenant.provisioned")
@@ -49,28 +45,30 @@ async def handle_tenant_provisioned_inventory(event: DomainEvent) -> None:
         tenant_id,
     )
 
-    session = await _tenant_session(tenant_id)
-    try:
-        warehouse = Warehouse(
-            name="Main Warehouse",
-            name_ar="المخزن الرئيسي",
-            location="Headquarters",
-            is_default=True,
-        )
-        session.add(warehouse)
-        await session.commit()
-        
-        logger.info(
-            "✅ Default Main Warehouse created for tenant '%s'",
-            tenant_id,
-        )
-    except Exception:
-        await session.rollback()
-        logger.exception(
-            "❌ DB error while processing tenant.provisioned in Inventory (event_id=%s, tenant=%s)",
-            event_id_str,
-            tenant_id,
-        )
-        raise
-    finally:
-        await session.close()
+    async with tenant_session(tenant_id) as session:
+        try:
+            if Warehouse is None:
+                logger.warning(
+                    "⚠️  Warehouse model not available — skipping default warehouse creation for tenant '%s'",
+                    tenant_id,
+                )
+                return
+            warehouse = Warehouse(
+                name="Main Warehouse",
+                name_ar="المخزن الرئيسي",
+                location="Headquarters",
+                is_default=True,
+            )
+            session.add(warehouse)
+            
+            logger.info(
+                "✅ Default Main Warehouse created for tenant '%s'",
+                tenant_id,
+            )
+        except Exception:
+            logger.exception(
+                "❌ DB error while processing tenant.provisioned in Inventory (event_id=%s, tenant=%s)",
+                event_id_str,
+                tenant_id,
+            )
+            raise

@@ -41,6 +41,8 @@ backend/*.egg-info/
 backend/htmlcov/
 backend/.coverage
 backend/coverage.xml
+backend/*.db
+backend/*.db-journal
 
 # ── Alembic ───────────────────────────────────────────────────────────────────
 # Keep migration scripts, but ignore generated artefacts
@@ -71,3 +73,4 @@ $RECYCLE.BIN/
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
+test_output.txt

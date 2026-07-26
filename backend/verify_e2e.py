@@ -11,9 +11,9 @@ What it tests:
     4. /me endpoint         (GET /api/v1/auth/me)
     5. Cleanup              (prints tenant_id for manual DB inspection)
 """
+import io
 import sys
 import uuid
-import io
 
 # Force UTF-8 output on Windows (avoids cp1252 UnicodeEncodeError)
 if hasattr(sys.stdout, 'reconfigure'):
@@ -85,7 +85,7 @@ def run() -> None:
     except httpx.ConnectError:
         abort(
             "Cannot connect to http://localhost:8000.\n"
-            "  → Is the FastAPI server running? (check the backend terminal window)"
+            "  → Is the FastAPI server running? (check the backend terminal window)",
         )
 
     # ── Step 2: Register a new tenant ─────────────────────────────────────────
@@ -104,12 +104,12 @@ def run() -> None:
             f"409 Conflict — email already registered.\n"
             f"  Detail: {r.json().get('detail')}\n"
             f"  → The test email '{TEST_PAYLOAD['email']}' exists. This should not\n"
-            f"    happen because we generate a UUID suffix. Check your DB state."
+            f"    happen because we generate a UUID suffix. Check your DB state.",
         )
     elif r.status_code == 422:
         abort(
             f"422 Validation Error — payload rejected by FastAPI.\n"
-            f"  Detail: {r.json().get('detail')}"
+            f"  Detail: {r.json().get('detail')}",
         )
     else:
         abort(f"Unexpected HTTP {r.status_code}: {r.text[:400]}")
@@ -128,20 +128,20 @@ def run() -> None:
             else:
                 fail(
                     f"Expected ['accounting','contacts'] in defaults, got: {plugins}\n"
-                    f"  → Check Tenant.active_plugins default_factory in models.py"
+                    f"  → Check Tenant.active_plugins default_factory in models.py",
                 )
         else:
             fail(
                 "active_plugins is empty [].\n"
                 "  → The column exists but default_factory did not seed ['accounting','contacts'].\n"
                 "  → Did you run `alembic upgrade head` AFTER the model change?\n"
-                "  → Or does the new tenant row have a NULL/empty value?"
+                "  → Or does the new tenant row have a NULL/empty value?",
             )
     elif r.status_code == 401:
         abort(
             "401 Unauthorized — JWT was not accepted.\n"
             "  → Token from /register is not valid for /system/plugins/active.\n"
-            "  → Check that SECRET_KEY in .env matches the running server's env."
+            "  → Check that SECRET_KEY in .env matches the running server's env.",
         )
     elif r.status_code == 403:
         abort("403 Forbidden — the test user does not have the required roles.")
@@ -170,7 +170,7 @@ def run() -> None:
     print(
         "\n  Next: open http://localhost:3000/register in your browser,\n"
         "  register using a NEW email, then check the sidebar shows\n"
-        "  only Accounting + Contacts sections.\n"
+        "  only Accounting + Contacts sections.\n",
     )
     client.close()
 

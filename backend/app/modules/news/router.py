@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_tenant_db
 from app.core.security import RequireRole
-from app.modules.system.dependencies import CurrentUser
 from app.modules.news.models import Announcement
 from app.modules.news.schemas import AnnouncementCreate, AnnouncementResponse
+from app.modules.system.dependencies import CurrentUser
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,7 +33,7 @@ async def list_announcements(
     Accessible by ALL authenticated roles.
     """
     result = await db.execute(
-        select(Announcement).order_by(Announcement.created_at.desc())
+        select(Announcement).order_by(Announcement.created_at.desc()),
     )
     announcements = result.scalars().all()
     return [AnnouncementResponse.model_validate(a) for a in announcements]

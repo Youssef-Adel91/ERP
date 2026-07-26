@@ -1,5 +1,7 @@
-import httpx
 import asyncio
+
+import httpx
+
 
 async def run():
     async with httpx.AsyncClient() as client:
@@ -7,7 +9,7 @@ async def run():
             'company_name': 'Test Company 11',
             'email': 'test11@example.com',
             'password': 'Password123!',
-            'full_name': 'Test Admin'
+            'full_name': 'Test Admin',
         })
         print(resp.status_code)
         print(resp.text)

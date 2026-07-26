@@ -1,11 +1,12 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
+
 from .models import SalesInvoiceStatus
+
 
 class SalesInvoiceLineCreate(BaseModel):
     item_id: UUID

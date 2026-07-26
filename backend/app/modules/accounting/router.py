@@ -123,7 +123,7 @@ async def list_journal_entries(
     offset: int = Query(default=0, ge=0),
 ) -> list[JournalEntryResponse]:
     entries = await service.get_journal_entries(
-        db, status_filter=entry_status, limit=limit, offset=offset
+        db, status_filter=entry_status, limit=limit, offset=offset,
     )
     return [JournalEntryResponse.model_validate(e) for e in entries]
 

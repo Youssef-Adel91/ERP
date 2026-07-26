@@ -24,7 +24,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.event_bus import InvoiceCreatedEvent, PaymentReceivedEvent, get_event_bus
+from app.core.event_bus import InvoiceCreatedEvent, get_event_bus
 from app.plugins.inventory.models import (
     Product,
     SaleInvoice,
@@ -86,7 +86,7 @@ async def get_products(db: AsyncSession, limit: int = 50, offset: int = 0) -> li
         .where(Product.is_active.is_(True))
         .order_by(Product.name)
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return list(result.scalars().all())
 
@@ -119,7 +119,7 @@ async def create_sale_invoice(
     line_items = []
     for item_data in data.items:
         product_result = await db.execute(
-            select(Product).where(Product.id == item_data.product_id).with_for_update()
+            select(Product).where(Product.id == item_data.product_id).with_for_update(),
         )
         product = product_result.scalar_one_or_none()
 
@@ -129,7 +129,7 @@ async def create_sale_invoice(
         if product.quantity_on_hand < item_data.quantity:
             raise InsufficientStockError(
                 f"Insufficient stock for '{product.name}': "
-                f"available={product.quantity_on_hand}, requested={item_data.quantity}"
+                f"available={product.quantity_on_hand}, requested={item_data.quantity}",
             )
 
         unit_price = item_data.unit_price or product.unit_price
@@ -191,7 +191,7 @@ async def create_sale_invoice(
                 "revenue_account_id": str(data.revenue_account_id),
                 "created_by_user_id": str(created_by),
             },
-        )
+        ),
     )
 
     return invoice

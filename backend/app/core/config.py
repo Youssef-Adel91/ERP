@@ -51,10 +51,15 @@ class Settings(BaseSettings):
         "http://localhost:8000",    # FastAPI docs (for Swagger UI)
     ]
 
-    # ── EventBus ──────────────────────────────────────────────────────────────
+    # --- EventBus ──────────────────────────────────────────────────────────────
     # "memory" → InMemoryEventBus (asyncio tasks, dev/test only)
     # "redis"  → RedisEventBus (Celery/pub-sub, production)
     EVENT_BUS_BACKEND: str = "memory"
+    REDIS_CHANNEL: str = "omni_erp:events"
+
+    # ── Observability ─────────────────────────────────────────────────────────
+    SENTRY_DSN: str | None = None
+    OTLP_ENDPOINT: str | None = None
 
     @field_validator("ENVIRONMENT")
     @classmethod

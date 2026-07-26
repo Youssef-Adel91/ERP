@@ -14,7 +14,6 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.modules.system.models import PlanTier, TenantStatus, UserRole
 
-
 # ── Tenant Registration ───────────────────────────────────────────────────────
 
 

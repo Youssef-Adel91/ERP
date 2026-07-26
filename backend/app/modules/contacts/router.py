@@ -113,7 +113,7 @@ async def list_contacts(
 
     # ── Count query ───────────────────────────────────────────────────────────
     count_result = await db.execute(
-        select(func.count()).select_from(Contact).where(*filters)
+        select(func.count()).select_from(Contact).where(*filters),
     )
     total = count_result.scalar_one()
 
@@ -123,7 +123,7 @@ async def list_contacts(
         .where(*filters)
         .order_by(Contact.name)
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     contacts = result.scalars().all()
 

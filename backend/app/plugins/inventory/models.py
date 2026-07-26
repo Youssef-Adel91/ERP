@@ -9,7 +9,7 @@ Dependency order for CREATE TABLE (FKs must come after referenced tables):
   2. invoices    (FK → contacts.id — contacts table must exist first)
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -43,6 +43,7 @@ class Item(SQLModel, table=True):
             "price >= 0 AND quantity_on_hand >= 0",
             name="ck_items_non_negative",
         ),
+        {"schema": "tenant"},
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -54,7 +55,7 @@ class Item(SQLModel, table=True):
 
     # Financials
     price: Decimal = Field(
-        sa_column=Column(Numeric(18, 4), nullable=False)
+        sa_column=Column(Numeric(18, 4), nullable=False),
     )
     cost: Decimal = Field(
         default=Decimal("0.0000"),
@@ -74,7 +75,7 @@ class Item(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
 
@@ -104,6 +105,7 @@ class Invoice(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("invoice_number", name="uq_invoices_number"),
         Index("ix_invoices_status", "status"),
+        {"schema": "tenant"},
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -113,24 +115,24 @@ class Invoice(SQLModel, table=True):
 
     # FK → contacts.id (same tenant schema, no schema prefix needed)
     # NOTE: contact_id references the contacts table via SET search_path
-    contact_id: UUID = Field(foreign_key="contacts.id", index=True)
+    contact_id: UUID = Field(foreign_key="tenant.contacts.id", index=True)
 
     status: InvoiceStatus = Field(default=InvoiceStatus.DRAFT)
 
     total_amount: Decimal = Field(
-        sa_column=Column(Numeric(18, 4), nullable=False)
+        sa_column=Column(Numeric(18, 4), nullable=False),
     )
 
     notes: str | None = Field(default=None, max_length=2000)
 
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
         sa_column_kwargs={"server_default": text("now()")},
     )
 
     # Relationships
-    contact: "Contact" = Relationship(  # noqa: F821
+    contact: "Contact" = Relationship(
         back_populates="invoices",
         sa_relationship_kwargs={"lazy": "select"},
     )
@@ -153,11 +155,12 @@ class InvoiceLine(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_invoice_lines_quantity"),
         CheckConstraint("unit_price >= 0", name="ck_invoice_lines_price"),
+        {"schema": "tenant"},
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    invoice_id: UUID = Field(foreign_key="invoices.id", index=True)
-    item_id: UUID = Field(foreign_key="items.id", index=True)
+    invoice_id: UUID = Field(foreign_key="tenant.invoices.id", index=True)
+    item_id: UUID = Field(foreign_key="tenant.items.id", index=True)
     quantity: Decimal = Field(sa_column=Column(Numeric(18, 4), nullable=False))
     unit_price: Decimal = Field(sa_column=Column(Numeric(18, 4), nullable=False))
     total_price: Decimal = Field(sa_column=Column(Numeric(18, 4), nullable=False))
@@ -170,4 +173,4 @@ class InvoiceLine(SQLModel, table=True):
 # SQLAlchemy resolves string FK "contacts.id" at table creation time via
 # the active search_path. No Python import needed for FK column definition.
 # The `Invoice.contact` relationship uses a string annotation to break the cycle.
-from app.modules.contacts.models import Contact  # noqa: E402, F401
+from app.modules.contacts.models import Contact  # noqa: E402

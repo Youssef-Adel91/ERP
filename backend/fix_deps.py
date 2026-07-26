@@ -1,7 +1,6 @@
-import re
 
 def fix_deps(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         c = f.read()
 
     c = c.replace('def require_roles(*roles: str):', 'def require_roles(*roles: UserRole):')

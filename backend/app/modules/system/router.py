@@ -19,7 +19,7 @@ DDL + DML transaction conflicts.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import redis.asyncio as aioredis
@@ -28,7 +28,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_public_db, get_redis, provision_tenant_schema
+from app.core.database import get_public_db, get_redis
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -37,8 +37,8 @@ from app.core.security import (
     validate_refresh_token,
     verify_password,
 )
-from app.modules.system.models import Tenant, TenantStatus, User, UserRole
 from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import Tenant, User, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,13 +83,7 @@ class TokenResponse(BaseModel):
 
 class RegisterResponse(BaseModel):
     tenant_id: str
-    tenant_name: str
-    schema_name: str
-    user_id: str
-    email: str
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+    job_id: str
     message: str
 
 
@@ -99,16 +93,14 @@ class RegisterResponse(BaseModel):
 @router.post(
     "/register",
     response_model=RegisterResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Register a new tenant + first admin user",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Register a new tenant + first admin user (Async)",
     description=(
-        "**Full provisioning flow:**\n"
+        "**Provisioning flow (Async):**\n"
         "1. Validates email uniqueness\n"
-        "2. Creates `Tenant` and `User` in `public` schema\n"
-        "3. Provisions isolated PostgreSQL schema (`tenant_{id}`)\n"
-        "4. Creates all accounting/contact/inventory tables in the new schema\n"
-        "5. Seeds default Chart of Accounts (12 system accounts)\n"
-        "6. Returns JWT tokens ready for immediate use\n\n"
+        "2. Creates `Tenant` and `User` in `public` schema (State: CREATED)\n"
+        "3. Inserts `TenantProvisioningJob`\n"
+        "4. Returns HTTP 202 Accepted\n\n"
         "This is a **public endpoint** — no Bearer token required."
     ),
     tags=["Authentication"],
@@ -119,16 +111,12 @@ async def register(
     redis: aioredis.Redis = Depends(get_redis),
 ) -> RegisterResponse:
     """
-    Register a new tenant. The entire flow is transactional:
-    - If public schema inserts fail → rollback, no schema created
-    - If schema provisioning fails → tenant is marked PENDING_SETUP
-      (Alembic retry can fix it)
+    Register a new tenant asynchronously.
     """
-    from app.core.config import settings
 
     # ── 1. Check email uniqueness ─────────────────────────────────────────────
     existing = await db.execute(
-        select(User).where(User.email == data.email.lower())
+        select(User).where(User.email == data.email.lower()),
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -148,20 +136,20 @@ async def register(
     slug = f"{base_slug}-{str(tenant_id)[:8]}"
 
     # ── 3. INSERT Tenant into public.tenants ──────────────────────────────────
+
+    from app.modules.system.models import ProvisioningState, TenantProvisioningJob
+
     tenant = Tenant(
-        id=tenant_id,
         name=data.company_name,
         slug=slug,
         schema_name=schema,
-        status=TenantStatus.PENDING_SETUP,  # Will be updated after provisioning
+        provisioning_state=ProvisioningState.CREATED,
     )
     db.add(tenant)
     await db.flush()  # Get tenant.id without committing yet
 
     # ── 4. INSERT User into public.users ──────────────────────────────────────
-    user_id = uuid4()
     user = User(
-        id=user_id,
         tenant_id=tenant.id,
         email=data.email.lower(),
         hashed_password=hash_password(data.password),
@@ -170,64 +158,27 @@ async def register(
     )
     db.add(user)
 
-    # Commit public schema rows BEFORE schema provisioning
-    # (provision_tenant_schema uses a separate connection)
-    await db.commit()
-    logger.info(
-        "Tenant '%s' (id=%s) inserted into public schema.", tenant.name, tenant.id
+    # ── 5. Create Provisioning Job ────────────────────────────────────────────
+    job = TenantProvisioningJob(
+        tenant_id=tenant.id,
+        status="pending",
     )
-
-    # ── 5. Provision the tenant schema + tables + seed accounts ───────────────
-    try:
-        provisioned_schema = await provision_tenant_schema(str(tenant.id))
-    except Exception as exc:
-        logger.critical(
-            "Schema provisioning FAILED for tenant %s: %s", tenant.id, exc
-        )
-        # Don't delete the tenant row — leave it in PENDING_SETUP for retry
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                f"Tenant registered (id={tenant.id}) but schema provisioning failed: {exc}. "
-                "Contact support or retry with the resume-provisioning endpoint."
-            ),
-        ) from exc
-
-    # ── 6. Mark tenant as ACTIVE ──────────────────────────────────────────────
-    await db.refresh(tenant)
-    tenant.status = TenantStatus.ACTIVE
+    db.add(job)
     await db.commit()
 
-    # ── 7. Issue JWT tokens ───────────────────────────────────────────────────
-    access_token = create_access_token(
-        user_id=user.id,
-        tenant_id=str(tenant.id),
-        roles=[UserRole.OWNER.value],
-    )
-    refresh_token = await create_refresh_token(
-        user_id=user.id,
-        tenant_id=str(tenant.id),
-        redis_client=redis,
-    )
-
     logger.info(
-        "✅ Registration complete: tenant='%s', schema='%s', user='%s'",
+        "✅ Registration accepted (async): tenant='%s', schema='%s', user='%s'",
         tenant.name,
-        provisioned_schema,
+        schema,
         user.email,
     )
 
     return RegisterResponse(
         tenant_id=str(tenant.id),
-        tenant_name=tenant.name,
-        schema_name=provisioned_schema,
-        user_id=str(user.id),
-        email=user.email,
-        access_token=access_token,
-        refresh_token=refresh_token,
+        job_id=str(job.id),
         message=(
             f"Tenant '{tenant.name}' registered successfully. "
-            f"Schema '{provisioned_schema}' provisioned with default Chart of Accounts."
+            f"Provisioning job started."
         ),
     )
 
@@ -249,7 +200,7 @@ async def login(
     from app.core.config import settings
 
     result = await db.execute(
-        select(User).where(User.email == data.email.lower())
+        select(User).where(User.email == data.email.lower()),
     )
     user: User | None = result.scalar_one_or_none()
 
@@ -267,7 +218,7 @@ async def login(
             detail="Account is deactivated. Contact your administrator.",
         )
 
-    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    user.last_login_at = datetime.now(UTC).replace(tzinfo=None)
     await db.commit()
 
     access_token = create_access_token(
@@ -302,8 +253,9 @@ async def refresh_token(
     db: AsyncSession = Depends(get_public_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> TokenResponse:
-    from app.core.config import settings
     from uuid import UUID
+
+    from app.core.config import settings
 
     result = await validate_refresh_token(data.refresh_token, redis)
     if not result:
@@ -314,7 +266,7 @@ async def refresh_token(
 
     user_id_str, tenant_id = result
     user_result = await db.execute(
-        select(User).where(User.id == UUID(user_id_str))
+        select(User).where(User.id == UUID(user_id_str)),
     )
     user = user_result.scalar_one_or_none()
 

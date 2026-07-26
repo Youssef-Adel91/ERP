@@ -1,10 +1,11 @@
-import os
 import glob
+import os
+
 
 def fix_all():
     for f in glob.glob('app/modules/**/*.py', recursive=True) + glob.glob('app/plugins/**/*.py', recursive=True):
         if not os.path.isfile(f): continue
-        with open(f, 'r', encoding='utf-8') as file:
+        with open(f, encoding='utf-8') as file:
             c = file.read()
             
         modified = False
@@ -26,7 +27,7 @@ def fix_all():
     # 3. Fix UserRole in system/models.py
     sm = 'app/modules/system/models.py'
     if os.path.exists(sm):
-        with open(sm, 'r', encoding='utf-8') as file:
+        with open(sm, encoding='utf-8') as file:
             c = file.read()
         
         if 'UserRole' not in c:
@@ -49,7 +50,7 @@ class UserRole(StrEnum):
     # 4. Fix schemas.py
     ss = 'app/modules/system/schemas.py'
     if os.path.exists(ss):
-        with open(ss, 'r', encoding='utf-8') as file:
+        with open(ss, encoding='utf-8') as file:
             c = file.read()
         
         if 'UserRole' not in c:
@@ -64,7 +65,7 @@ class UserRole(StrEnum):
     # 5. Fix service.py
     srv = 'app/modules/system/service.py'
     if os.path.exists(srv):
-        with open(srv, 'r', encoding='utf-8') as file:
+        with open(srv, encoding='utf-8') as file:
             c = file.read()
             
         if 'UserRole' not in c:
@@ -80,7 +81,7 @@ class UserRole(StrEnum):
     # 6. Fix router.py
     rt = 'app/modules/system/router.py'
     if os.path.exists(rt):
-        with open(rt, 'r', encoding='utf-8') as file:
+        with open(rt, encoding='utf-8') as file:
             c = file.read()
             
         if 'UserRole' not in c:
@@ -97,7 +98,7 @@ class UserRole(StrEnum):
     # 7. Fix dependencies.py
     dep = 'app/modules/system/dependencies.py'
     if os.path.exists(dep):
-        with open(dep, 'r', encoding='utf-8') as file:
+        with open(dep, encoding='utf-8') as file:
             c = file.read()
             
         if 'UserRole' not in c:

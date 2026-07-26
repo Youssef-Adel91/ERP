@@ -6,15 +6,12 @@ All operations on global tables go through this service layer.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
-from jose import JWTError
+import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-import redis.asyncio as aioredis
 
 from app.core.database import create_tenant_schema
 from app.core.event_bus import TenantProvisionedEvent, get_event_bus
@@ -26,12 +23,12 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.system.models import (
-    UserRole,
     PlanTier,
     Subscription,
     Tenant,
     TenantStatus,
     User,
+    UserRole,
 )
 from app.modules.system.schemas import (
     TenantRegisterRequest,
@@ -83,7 +80,7 @@ async def register_tenant(
     """
     # 1. Check email uniqueness
     existing_user = await db.execute(
-        select(User).where(User.email == data.admin_email)
+        select(User).where(User.email == data.admin_email),
     )
     if existing_user.scalar_one_or_none():
         raise DuplicateEmailError(f"Email '{data.admin_email}' is already registered.")
@@ -153,7 +150,7 @@ async def register_tenant(
                 "schema_name": schema_name,
                 "admin_user_id": str(admin_user.id),
             },
-        )
+        ),
     )
 
     # 8. Issue JWT tokens
@@ -177,7 +174,7 @@ async def register_tenant(
     )
 
     logger.info(
-        "Tenant '%s' registered successfully (schema: %s)", tenant.name, schema_name
+        "Tenant '%s' registered successfully (schema: %s)", tenant.name, schema_name,
     )
     return tenant, admin_user, token_response
 
@@ -218,7 +215,7 @@ async def login(
         raise AuthenticationError("Account is deactivated. Contact your administrator.")
 
     # Update last login timestamp
-    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    user.last_login_at = datetime.now(UTC).replace(tzinfo=None)
     await db.commit()
 
     # Issue tokens
@@ -263,7 +260,7 @@ async def refresh_access_token(
 
     # Re-fetch user to get current roles (may have changed since last login)
     db_result = await db.execute(
-        select(User).where(User.id == UUID(user_id_str))
+        select(User).where(User.id == UUID(user_id_str)),
     )
     user: User | None = db_result.scalar_one_or_none()
     if not user or not user.is_active:

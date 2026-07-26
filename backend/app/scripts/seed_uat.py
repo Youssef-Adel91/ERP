@@ -13,11 +13,12 @@ from decimal import Decimal
 
 from sqlalchemy import select, text
 
-from app.core.database import AsyncSessionLocal, engine, _schema_name
+from app.core.database import AsyncSessionLocal, _schema_name
 from app.core.security import hash_password
+from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.system.models import Tenant, User, UserRole
-from app.modules.contacts.models import Contact, ContactType, ContactStatus
 from app.plugins.inventory.models import Item
+
 
 async def main():
     tenant_id_arg = sys.argv[1] if len(sys.argv) > 1 else None
@@ -50,7 +51,7 @@ async def main():
         # Test Accounts to Create
         test_accounts = [
             ("sales@uat.com", "Sales Agent", UserRole.SALES),
-            ("accounting@uat.com", "Accounting Officer", UserRole.ACCOUNTING)
+            ("accounting@uat.com", "Accounting Officer", UserRole.ACCOUNTING),
         ]
         default_password = "Password123!"
         
@@ -64,7 +65,7 @@ async def main():
                     email=email,
                     hashed_password=hash_password(default_password),
                     full_name=name,
-                    role=role
+                    role=role,
                 )
                 session.add(u)
                 print(f"  ✅ Created User: {email} (Role: {role.value})")
@@ -84,7 +85,7 @@ async def main():
         print("    Seeding Contacts...")
         contacts_data = [
             ("المصنع الذهبي للزجاج", ContactType.SUPPLIER, "01000000001"),
-            ("شركة الرواد للمقاولات", ContactType.CUSTOMER, "01100000002")
+            ("شركة الرواد للمقاولات", ContactType.CUSTOMER, "01100000002"),
         ]
         
         for name, c_type, phone in contacts_data:
@@ -95,7 +96,7 @@ async def main():
                     name_ar=name,
                     contact_type=c_type,
                     phone=phone,
-                    status=ContactStatus.ACTIVE
+                    status=ContactStatus.ACTIVE,
                 )
                 session.add(c)
                 print(f"      ✅ Created {c_type.value}: {name}")
@@ -107,7 +108,7 @@ async def main():
         items_data = [
             ("مفصلة باب سيكوريت", "SKU-GLS-001", "150.00", "200.00"),
             ("كالون زجاج", "SKU-GLS-002", "300.00", "450.00"),
-            ("مقبض ستانلس", "SKU-GLS-003", "80.00", "120.00")
+            ("مقبض ستانلس", "SKU-GLS-003", "80.00", "120.00"),
         ]
         
         for name, sku, cost, price in items_data:
@@ -119,7 +120,7 @@ async def main():
                     sku=sku,
                     cost=Decimal(cost),
                     price=Decimal(price),
-                    quantity_on_hand=Decimal("0.000")
+                    quantity_on_hand=Decimal("0.000"),
                 )
                 session.add(item)
                 print(f"      ✅ Created Item: {name} (SKU: {sku})")

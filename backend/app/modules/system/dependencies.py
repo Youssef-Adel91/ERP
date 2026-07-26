@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_public_db
-from app.core.security import decode_token
 from app.modules.system.models import User, UserRole
 
 
@@ -34,7 +33,7 @@ async def get_current_user(
         )
 
     result = await db.execute(
-        select(User).where(User.id == UUID(user_id_str))
+        select(User).where(User.id == UUID(user_id_str)),
     )
     user: User | None = result.scalar_one_or_none()
 

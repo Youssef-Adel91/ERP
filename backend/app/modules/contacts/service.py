@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.event_bus import ContactCreatedEvent, get_event_bus
-from app.modules.contacts.models import Contact, ContactRelationship, RelationshipType
+from app.modules.contacts.models import Contact, ContactRelationship
 from app.modules.contacts.schemas import (
     ContactCreateRequest,
     ContactRelationshipCreateRequest,
@@ -57,7 +57,7 @@ async def create_contact(
                 "phone": contact.phone,
                 # NEO4J_EXPORT_TRIGGER: This event triggers async node creation
             },
-        )
+        ),
     )
 
     logger.info("Created contact '%s' (type=%s)", contact.name, contact.contact_type)
@@ -74,7 +74,7 @@ async def get_contacts(
         select(Contact)
         .order_by(Contact.name)
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return list(result.scalars().all())
 

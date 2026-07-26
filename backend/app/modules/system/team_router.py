@@ -6,17 +6,16 @@ Only accessible to users with the OWNER role.
 """
 
 import logging
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, EmailStr, Field
 
 from app.core.database import get_public_db
 from app.core.security import RequireRole, hash_password
-from app.modules.system.models import User, UserRole
 from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import User, UserRole
 from app.modules.system.schemas import UserResponse
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ async def list_team_members(
     Any authenticated user can list the team.
     """
     result = await db.execute(
-        select(User).where(User.tenant_id == current_user.tenant_id)
+        select(User).where(User.tenant_id == current_user.tenant_id),
     )
     users = result.scalars().all()
     return [UserResponse.model_validate(u) for u in users]
@@ -74,7 +73,7 @@ async def create_team_member(
     """
     # 1. Check if email exists globally (since users are in public schema)
     existing = await db.execute(
-        select(User).where(User.email == data.email.lower())
+        select(User).where(User.email == data.email.lower()),
     )
     if existing.scalar_one_or_none():
         raise HTTPException(

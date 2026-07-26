@@ -6,6 +6,11 @@ Router mount map:
   /api/v1/contacts/*     → contacts.router    (CRM: customers & suppliers)
   /api/v1/accounting/*   → accounting.router  (Chart of Accounts, Journal Entries)
   /api/v1/inventory/*    → inventory.router   (Items, Invoices with EventBus)
+  /api/v1/purchases/*    → purchases.router   (Purchase Invoices)
+  /api/v1/sales/*        → sales.router       (Sales Invoices)
+  /api/v1/news/*         → news.router        (Internal Announcements)
+  /api/v1/dashboard/*    → dashboard.router   (Real-time KPI Metrics)
+  /api/v1/team/*         → team.router        (User/Team Management)
   /health                → inline             (infrastructure health check)
 
 Middleware stack (applied in registration order, executes in reverse):
@@ -27,30 +32,38 @@ Startup sequence:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
+import sentry_sdk
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
-from sqlmodel import SQLModel
-
-from app.core.config import settings
-from app.core.database import TenantMiddleware, engine, redis_client
 
 # ── CRITICAL: Register EventBus handlers before first request ─────────────────
 # This is a side-effect import. The module body runs @event_bus.subscribe(),
 # registering handle_invoice_created and handle_payment_received.
 # Remove this import → events are published but never processed.
-import app.modules.accounting.events  # noqa: F401, E402
+import app.modules.accounting.events
+import app.plugins.inventory.events
+from app.core.config import settings
+from app.core.db.database import TenantMiddleware, engine, redis_client
+from app.core.observability.logging import setup_logging
+from app.core.observability.middleware import ObservabilityMiddleware
+from app.core.security.middleware import PayloadSizeLimitMiddleware, SecurityHeadersMiddleware
+from app.core.security.throttling import RateLimiterMiddleware
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# Initialize structlog
+setup_logging(json_logs=True, log_level=logging.DEBUG if settings.DEBUG else logging.INFO)
+logger = structlog.get_logger(__name__)
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -71,21 +84,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.critical("❌ PostgreSQL unreachable on startup: %s", exc)
         raise
 
-    # ── Step 2: Auto-create public schema tables (idempotent) ─────────────────
-    # Creates `public.tenants` and `public.users` if they don't exist.
-    # In production with Alembic, these tables already exist — this is a no-op.
-    try:
-        from app.modules.system.models import Tenant, User
-
-        public_tables = [Tenant.__table__, User.__table__]
-        async with engine.begin() as conn:
-            await conn.execute(text("SET search_path TO public"))
-            await conn.run_sync(
-                lambda c: SQLModel.metadata.create_all(c, tables=public_tables)
-            )
-        logger.info("✅ Public schema tables ready (tenants, users)")
-    except Exception as exc:
-        logger.error("⚠️  Public schema table creation failed: %s", exc)
+    # ── Step 2: Ensure Alembic migrations are used instead of create_all ──────────
+    logger.info("✅ Database connection ready. (Migrations should be run via Alembic)")
 
     # ── Step 3: Redis health check ────────────────────────────────────────────
     try:
@@ -95,7 +95,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("⚠️  Redis unavailable (refresh tokens disabled): %s", exc)
 
     logger.info(
-        "✅ EventBus handlers registered (backend=%s)", settings.EVENT_BUS_BACKEND
+        "✅ EventBus handlers registered (backend=%s)", settings.EVENT_BUS_BACKEND,
     )
     logger.info("✅ Ready → http://0.0.0.0:8000/docs")
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -151,7 +151,43 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── Middleware (applied bottom-up — CORS wraps everything) ────────────────
+    # ── Observability Setup ───────────────────────────────────────────────────
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.ENVIRONMENT,
+            traces_sample_rate=1.0,
+        )
+
+    provider = TracerProvider()
+    if settings.OTLP_ENDPOINT:
+        exporter = OTLPSpanExporter(endpoint=settings.OTLP_ENDPOINT)
+    else:
+        exporter = ConsoleSpanExporter()
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    FastAPIInstrumentor.instrument_app(_app)
+
+    Instrumentator().instrument(_app).expose(_app, endpoint="/metrics")
+
+    # ── Middleware (Applied Bottom-Up: Last added executes first) ─────────────
+    
+    # 6. Executes 6th: Rate Limiting (Needs tenant_id from TenantMiddleware)
+    _app.add_middleware(RateLimiterMiddleware, max_requests=300, window_seconds=60)
+    
+    # 5. Executes 5th: Tenant resolution (Decodes JWT -> sets tenant_id)
+    _app.add_middleware(TenantMiddleware)
+    
+    # 4. Executes 4th: Observability (Generates trace_id and request_id)
+    _app.add_middleware(ObservabilityMiddleware)
+    
+    # 3. Executes 3rd: Payload Size Limit (Drops huge requests early)
+    _app.add_middleware(
+        PayloadSizeLimitMiddleware, 
+        whitelist_prefixes=["/api/v1/attachments"],
+    )
+    
+    # 2. Executes 2nd: CORS (Handles preflight OPTIONS so they bypass auth)
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -159,9 +195,9 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # TenantMiddleware must be INSIDE CORSMiddleware so OPTIONS preflight
-    # requests bypass tenant resolution (they carry no Bearer token)
-    _app.add_middleware(TenantMiddleware)
+    
+    # 1. Executes 1st: Security Headers (Wraps all responses)
+    _app.add_middleware(SecurityHeadersMiddleware)
 
     # ── Routers ───────────────────────────────────────────────────────────────
 
@@ -195,6 +231,58 @@ def create_application() -> FastAPI:
         inventory_router,
         prefix=f"{settings.API_V1_PREFIX}/inventory",
         tags=["Inventory Plugin"],
+    )
+
+    # 5. Purchases Plugin — tenant schema (Purchase Invoices)
+    # NOTE: models.py is an empty stub — will register when models are implemented
+    try:
+        from app.plugins.purchases.router import router as purchases_router
+        _app.include_router(
+            purchases_router,
+            prefix=f"{settings.API_V1_PREFIX}/purchases",
+            tags=["Purchases Plugin"],
+        )
+    except ImportError as exc:
+        logger.warning("⚠️  Purchases plugin skipped (models not yet implemented): %s", exc)
+
+    # 6. Sales Plugin — tenant schema (Sales Invoices)
+    # NOTE: models.py is an empty stub — will register when models are implemented
+    try:
+        from app.plugins.sales.router import router as sales_router
+        _app.include_router(
+            sales_router,
+            prefix=f"{settings.API_V1_PREFIX}/sales",
+            tags=["Sales Plugin"],
+        )
+    except ImportError as exc:
+        logger.warning("⚠️  Sales plugin skipped (models not yet implemented): %s", exc)
+
+    # 7. News / Announcements — tenant schema
+    # NOTE: models.py is an empty stub — will register when model is implemented
+    try:
+        from app.modules.news.router import router as news_router
+        _app.include_router(
+            news_router,
+            prefix=f"{settings.API_V1_PREFIX}/news",
+            tags=["News"],
+        )
+    except ImportError as exc:
+        logger.warning("⚠️  News module skipped (models not yet implemented): %s", exc)
+
+    # 8. Dashboard — tenant schema (real-time KPI metrics)
+    from app.modules.dashboard.router import router as dashboard_router
+    _app.include_router(
+        dashboard_router,
+        prefix=f"{settings.API_V1_PREFIX}/dashboard",
+        tags=["Dashboard"],
+    )
+
+    # 9. Team / User Management — public schema (OWNER only)
+    from app.modules.system.team_router import router as team_router
+    _app.include_router(
+        team_router,
+        prefix=f"{settings.API_V1_PREFIX}/team",
+        tags=["Team Management"],
     )
 
     # ── Infrastructure ────────────────────────────────────────────────────────

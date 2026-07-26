@@ -6,13 +6,14 @@ set by the get_tenant_db dependency. No raw SQL schema references needed.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.sequences.service import allocate_sequence
 from app.modules.accounting.models import (
     Account,
     AccountType,
@@ -61,7 +62,7 @@ async def get_accounts(
         .where(*filters, Account.is_active.is_(True))
         .order_by(Account.code)
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return list(result.scalars().all())
 
@@ -97,7 +98,7 @@ async def get_account_balance(
     """
     # Fetch account metadata
     acct_result = await db.execute(
-        select(Account).where(Account.code == account_code)
+        select(Account).where(Account.code == account_code),
     )
     account = acct_result.scalar_one_or_none()
     if not account:
@@ -113,7 +114,7 @@ async def get_account_balance(
         .where(
             TransactionLine.account_code == account_code,
             JournalEntry.status == JournalEntryStatus.POSTED,
-        )
+        ),
     )
     total_debit, total_credit = balance_result.one()
 
@@ -150,7 +151,7 @@ async def get_journal_entries(
         .where(*filters)
         .order_by(JournalEntry.created_at.desc())
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return list(result.scalars().all())
 
@@ -172,7 +173,7 @@ async def create_draft_journal_entry(
     if total_debit.quantize(Decimal("0.0001")) != total_credit.quantize(Decimal("0.0001")):
         raise UnbalancedEntryError(
             f"Unbalanced entry: Σdebits={total_debit} ≠ Σcredits={total_credit} "
-            f"(Δ={abs(total_debit - total_credit)})"
+            f"(Δ={abs(total_debit - total_credit)})",
         )
 
     entry = JournalEntry(
@@ -187,7 +188,7 @@ async def create_draft_journal_entry(
     for line_data in data.lines:
         # Fetch account name for snapshot (optional — graceful fallback)
         acct_result = await db.execute(
-            select(Account.name).where(Account.code == line_data.account_code)
+            select(Account.name).where(Account.code == line_data.account_code),
         )
         account_name = acct_result.scalar_one_or_none() or line_data.account_code
 
@@ -219,7 +220,7 @@ async def post_journal_entry(
     To correct it, create a reversing entry (create_reversing_entry).
     """
     result = await db.execute(
-        select(JournalEntry).where(JournalEntry.id == entry_id)
+        select(JournalEntry).where(JournalEntry.id == entry_id),
     )
     entry = result.scalar_one_or_none()
 
@@ -227,20 +228,38 @@ async def post_journal_entry(
         raise LookupError(f"Journal entry '{entry_id}' not found.")
     if entry.status == JournalEntryStatus.POSTED:
         raise PostedEntryMutationError(
-            f"Journal entry '{entry_id}' is already POSTED and immutable."
+            f"Journal entry '{entry_id}' is already POSTED and immutable.",
         )
     if entry.status == JournalEntryStatus.VOID:
         raise PostedEntryMutationError(
-            f"Journal entry '{entry_id}' is VOID and cannot be posted."
+            f"Journal entry '{entry_id}' is VOID and cannot be posted.",
         )
 
     entry.status = JournalEntryStatus.POSTED
-    entry.posted_by = posted_by
-    entry.posted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    entry.posted_at = datetime.now(UTC).replace(tzinfo=None)
+
+    # 1. Allocate gapless sequence number (SELECT FOR UPDATE inside this transaction)
+    fiscal_year = (entry.posted_at or datetime.now(UTC)).year
+    _seq_str, seq_no = await allocate_sequence(
+        session=db,
+        doc_type="journal_entry",
+        fiscal_year=fiscal_year,
+        branch_id=entry.branch_id,
+        prefix="JE-",
+        padding=6,
+    )
+    entry.sequence_no = seq_no
+
+    # 2. Compute hash chain (SELECT FOR UPDATE on chain tip, also inside this tx)
+    from app.modules.accounting.services.hash import compute_entry_hash
+    lines = list(entry.lines)  # already loaded via selectin
+    prev_hash, entry_hash = await compute_entry_hash(db, entry, lines)
+    entry.prev_hash = prev_hash
+    entry.entry_hash = entry_hash
 
     await db.commit()
     await db.refresh(entry)
-    logger.info("Posted journal entry '%s' (id=%s)", entry.reference, entry.id)
+    logger.info("Posted journal entry '%s' (id=%s) seq#%d", entry.reference, entry.id, seq_no)
     return entry
 
 
@@ -254,7 +273,7 @@ async def create_reversing_entry(
     The original entry must be POSTED. The reversing entry is created as DRAFT.
     """
     result = await db.execute(
-        select(JournalEntry).where(JournalEntry.id == original_entry_id)
+        select(JournalEntry).where(JournalEntry.id == original_entry_id),
     )
     original = result.scalar_one_or_none()
 

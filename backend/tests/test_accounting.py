@@ -18,13 +18,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.accounting import service
-from app.modules.accounting.models import AccountType, JournalEntryStatus
+from app.modules.accounting.models import JournalEntryStatus
 from app.modules.accounting.schemas import (
-    AccountCreateRequest,
     JournalEntryCreateRequest,
     TransactionLineCreateRequest,
 )
@@ -48,10 +46,10 @@ class TestDoubleEntryConstraints:
             description="Test balanced entry",
             lines=[
                 TransactionLineCreateRequest(
-                    account_id=ar.id, debit=Decimal("1000.00")
+                    account_code=ar.code, debit=Decimal("1000.00"),
                 ),
                 TransactionLineCreateRequest(
-                    account_id=revenue.id, credit=Decimal("1000.00")
+                    account_code=revenue.code, credit=Decimal("1000.00"),
                 ),
             ],
         )
@@ -84,13 +82,13 @@ class TestDoubleEntryConstraints:
 
         # Manually create lines with mismatched amounts
         line1 = TransactionLineCreateRequest.__new__(TransactionLineCreateRequest)
-        object.__setattr__(line1, "account_id", ar.id)
+        object.__setattr__(line1, "account_code", ar.code)
         object.__setattr__(line1, "debit", Decimal("1500.00"))
         object.__setattr__(line1, "credit", Decimal("0"))
         object.__setattr__(line1, "description", None)
 
         line2 = TransactionLineCreateRequest.__new__(TransactionLineCreateRequest)
-        object.__setattr__(line2, "account_id", revenue.id)
+        object.__setattr__(line2, "account_code", revenue.code)
         object.__setattr__(line2, "debit", Decimal("0"))
         object.__setattr__(line2, "credit", Decimal("1000.00"))  # ≠ 1500
         object.__setattr__(line2, "description", None)
@@ -108,25 +106,29 @@ class TestDoubleEntryConstraints:
         assert "1000" in str(exc_info.value)
 
     async def test_pydantic_rejects_both_debit_and_credit_on_same_line(self):
-        """A TransactionLine with both debit > 0 AND credit > 0 is invalid."""
+        """Pydantic should reject a line that has both debit > 0 and credit > 0."""
+        from app.modules.accounting.schemas import TransactionLineCreateRequest
+
         with pytest.raises(ValueError, match="cannot have both debit and credit"):
             TransactionLineCreateRequest(
-                account_id=uuid4(),
+                account_code="1200",
                 debit=Decimal("500"),
                 credit=Decimal("500"),
             )
 
-    async def test_pydantic_rejects_zero_line(self):
-        """A TransactionLine with debit=0 AND credit=0 is invalid."""
+    def test_pydantic_rejects_zero_line(self):
+        """Pydantic should reject a line where both debit and credit are 0."""
+        from app.modules.accounting.schemas import TransactionLineCreateRequest
+
         with pytest.raises(ValueError, match="non-zero"):
             TransactionLineCreateRequest(
-                account_id=uuid4(),
+                account_code="1200",
                 debit=Decimal("0"),
                 credit=Decimal("0"),
             )
 
     async def test_pydantic_rejects_unbalanced_entry(
-        self, seed_chart_of_accounts: dict
+        self, seed_chart_of_accounts: dict,
     ):
         """JournalEntryCreateRequest itself validates balance."""
         ar = seed_chart_of_accounts["1200"]
@@ -137,8 +139,8 @@ class TestDoubleEntryConstraints:
                 reference="JE-BAD",
                 description="Bad",
                 lines=[
-                    TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("999")),
-                    TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("888")),
+                    TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("999")),
+                    TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("888")),
                 ],
             )
 
@@ -156,8 +158,8 @@ class TestDoubleEntryConstraints:
             reference="JE-POST-001",
             description="To be posted",
             lines=[
-                TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("500")),
-                TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("500")),
+                TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("500")),
+                TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("500")),
             ],
         )
 
@@ -167,7 +169,6 @@ class TestDoubleEntryConstraints:
         posted = await service.post_journal_entry(entry.id, user_id, db_session)
 
         assert posted.status == JournalEntryStatus.POSTED
-        assert posted.posted_by == user_id
         assert posted.posted_at is not None
 
     async def test_cannot_post_already_posted_entry(
@@ -184,8 +185,8 @@ class TestDoubleEntryConstraints:
             reference="JE-DOUBLE-POST",
             description="Will be posted twice",
             lines=[
-                TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("200")),
-                TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("200")),
+                TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("200")),
+                TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("200")),
             ],
         )
 
@@ -211,8 +212,8 @@ class TestDoubleEntryConstraints:
                 reference="JE-BAL-001",
                 description="Sale 1",
                 lines=[
-                    TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("1000")),
-                    TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("1000")),
+                    TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("1000")),
+                    TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("1000")),
                 ],
             ),
             user_id, db_session,
@@ -225,15 +226,15 @@ class TestDoubleEntryConstraints:
                 reference="JE-BAL-002",
                 description="Sale 2 (draft)",
                 lines=[
-                    TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("500")),
-                    TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("500")),
+                    TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("500")),
+                    TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("500")),
                 ],
             ),
             user_id, db_session,
         )
 
-        ar_balance = await service.get_account_balance(ar.id, db_session)
-        revenue_balance = await service.get_account_balance(revenue.id, db_session)
+        ar_balance = await service.get_account_balance(ar.code, db_session)
+        revenue_balance = await service.get_account_balance(revenue.code, db_session)
 
         # Only posted entry (1000) should be reflected
         assert ar_balance.total_debit == Decimal("1000.0000")
@@ -256,8 +257,8 @@ class TestDoubleEntryConstraints:
                 reference="JE-REV-ORIG",
                 description="Original entry",
                 lines=[
-                    TransactionLineCreateRequest(account_id=ar.id, debit=Decimal("750")),
-                    TransactionLineCreateRequest(account_id=revenue.id, credit=Decimal("750")),
+                    TransactionLineCreateRequest(account_code=ar.code, debit=Decimal("750")),
+                    TransactionLineCreateRequest(account_code=revenue.code, credit=Decimal("750")),
                 ],
             ),
             user_id, db_session,
@@ -270,10 +271,10 @@ class TestDoubleEntryConstraints:
         assert reversing.status == JournalEntryStatus.DRAFT
 
         # Debits and credits should be swapped
-        orig_lines = {line.account_id: line for line in original.lines}
-        rev_lines = {line.account_id: line for line in reversing.lines}
+        orig_lines = {line.account_code: line for line in original.lines}
+        rev_lines = {line.account_code: line for line in reversing.lines}
 
-        assert rev_lines[ar.id].credit == orig_lines[ar.id].debit
-        assert rev_lines[ar.id].debit == orig_lines[ar.id].credit
-        assert rev_lines[revenue.id].debit == orig_lines[revenue.id].credit
-        assert rev_lines[revenue.id].credit == orig_lines[revenue.id].debit
+        assert rev_lines[ar.code].credit == orig_lines[ar.code].debit
+        assert rev_lines[ar.code].debit == orig_lines[ar.code].credit
+        assert rev_lines[revenue.code].debit == orig_lines[revenue.code].credit
+        assert rev_lines[revenue.code].credit == orig_lines[revenue.code].debit

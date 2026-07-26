@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from app.plugins.inventory.models import InvoiceStatus
 
-
 # ── Item ──────────────────────────────────────────────────────────────────────
 
 

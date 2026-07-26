@@ -4,13 +4,11 @@ app/modules/accounting/schemas.py — Accounting Module Pydantic Schemas
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.modules.accounting.models import AccountType, JournalEntryStatus
-
 
 # ── Account ───────────────────────────────────────────────────────────────────
 
@@ -92,7 +90,7 @@ class JournalEntryCreateRequest(BaseModel):
             raise ValueError(
                 f"Journal entry is unbalanced: "
                 f"Σ debits={total_debit} ≠ Σ credits={total_credit}. "
-                f"Difference: {abs(total_debit - total_credit)}"
+                f"Difference: {abs(total_debit - total_credit)}",
             )
         return self
 
