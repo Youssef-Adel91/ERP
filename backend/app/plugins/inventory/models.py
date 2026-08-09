@@ -43,19 +43,20 @@ class Item(SQLModel, table=True):
             "price >= 0 AND quantity_on_hand >= 0",
             name="ck_items_non_negative",
         ),
-        {"schema": "tenant"},
+        {"schema": "tenant", "extend_existing": True},
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str = Field(max_length=255, index=True)
+    name: str = Field(max_length=255)
     name_ar: str | None = Field(default=None, max_length=255)
-    sku: str = Field(max_length=100, index=True)
+    sku: str = Field(max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     category: str | None = Field(default=None, max_length=100)
 
     # Financials
     price: Decimal = Field(
-        sa_column=Column(Numeric(18, 4), nullable=False),
+        default=Decimal("0.0000"),
+        sa_column=Column(Numeric(18, 4), nullable=False, server_default=text("0")),
     )
     cost: Decimal = Field(
         default=Decimal("0.0000"),
@@ -64,13 +65,14 @@ class Item(SQLModel, table=True):
 
     # Stock
     quantity_on_hand: Decimal = Field(
-        default=Decimal("0"),
+        default=Decimal("0.0000"),
         sa_column=Column(Numeric(18, 4), nullable=False, server_default=text("0")),
     )
     reorder_level: Decimal = Field(
-        default=Decimal("0"),
+        default=Decimal("0.0000"),
         sa_column=Column(Numeric(18, 4), nullable=False, server_default=text("0")),
     )
+    costing_method: str | None = Field(default=None, max_length=20)
 
     is_active: bool = Field(default=True)
     created_by: UUID | None = Field(default=None)

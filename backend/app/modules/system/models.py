@@ -28,6 +28,7 @@ class TenantStatus(StrEnum):
     ACTIVE = "active"
     PENDING_SETUP = "pending_setup"
     SUSPENDED = "suspended"
+    READ_ONLY = "read_only"
 
 class ProvisioningState(StrEnum):
     CREATED = "created"
@@ -139,10 +140,6 @@ class TenantPlugin(PublicBase, table=True):
     plugin_id: UUID = Field(foreign_key="public.plugins.id", index=True)
 
 
-class GlobalReputation(PublicBase, table=True):
-    __tablename__ = "global_reputation"
-    __table_args__ = ({"schema": "public"},)
-    contact_national_id: str = Field(max_length=20, index=True)
 
 
 class OutboxEvent(PublicBase, table=True):

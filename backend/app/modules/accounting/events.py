@@ -257,3 +257,8 @@ async def handle_payment_received(event: DomainEvent) -> None:
         except Exception:
             logger.exception("❌ DB error in handle_payment_received (event_id=%s)", event_id_str)
             raise
+
+# Import GL Bridge event consumers to register them with the EventBus singleton
+import app.modules.accounting.consumers.events  # noqa: F401, E402
+import app.modules.accounting.consumers.purchasing_events  # noqa: F401, E402
+

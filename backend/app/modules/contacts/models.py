@@ -8,7 +8,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, Index, Numeric, text
-from sqlmodel import Column, Field, Relationship
+from sqlmodel import Column, Field
 
 from app.core.db.base import TenantBase
 
@@ -57,7 +57,19 @@ class Contact(TenantBase, table=True):
     cod_rejection_count: int = Field(default=0)
     cod_acceptance_count: int = Field(default=0)
 
-    invoices: list["Invoice"] = Relationship(  # noqa: F821
-        back_populates="contact",
-        sa_relationship_kwargs={"lazy": "select"},
-    )
+    # NOTE: a `invoices: list["Invoice"] = Relationship(...)` attribute used
+    # to live here, pointing at the now-retired app.plugins.inventory.models.
+    # Invoice (see app.core.db.database's cutover comment — that whole
+    # plugins.{inventory,sales,purchases} tree was replaced by
+    # app.modules.{inventory,sales,purchasing}). That plugin module is no
+    # longer imported anywhere, so the forward ref "Invoice" was a dangling
+    # string reference. SQLAlchemy configures ALL mappers in the shared
+    # registry on first query against ANY mapped class, so this wasn't a
+    # dormant no-op — it 500'd every single query touching Contact
+    # (`InvalidRequestError: ... 'Invoice' failed to locate a name`),
+    # discovered while wiring the carrier webhook fix. Removed rather than
+    # repointed at app.modules.sales.models.invoice.SalesInvoice, since that
+    # side has no matching back_populates/relationship or FK constraint on
+    # contact_id today — wiring that properly is a separate, deliberate
+    # change, not a silent side effect of a bug fix.
+

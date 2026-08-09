@@ -17,7 +17,7 @@ from app.core.database import AsyncSessionLocal, _schema_name
 from app.core.security import hash_password
 from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.system.models import Tenant, User, UserRole
-from app.plugins.inventory.models import Item
+from app.modules.inventory.models.core import Item
 
 
 async def main():
@@ -112,15 +112,14 @@ async def main():
         ]
         
         for name, sku, cost, price in items_data:
+            # modules/inventory's Item no longer carries cost/price/quantity_on_hand
+            # directly (those moved to ItemVariant.price and StockLevel.quantity
+            # respectively) — this seed script only creates the base Item row.
             res = await session.execute(select(Item).where(Item.sku == sku))
             if not res.scalar_one_or_none():
                 item = Item(
                     name=name,
-                    name_ar=name,
                     sku=sku,
-                    cost=Decimal(cost),
-                    price=Decimal(price),
-                    quantity_on_hand=Decimal("0.000"),
                 )
                 session.add(item)
                 print(f"      ✅ Created Item: {name} (SKU: {sku})")

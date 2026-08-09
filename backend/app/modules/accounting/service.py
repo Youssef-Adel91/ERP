@@ -18,9 +18,24 @@ from app.modules.accounting.models import (
     Account,
     AccountType,
     JournalEntry,
+    JournalEntryLine,
     JournalEntryStatus,
     TransactionLine,
 )
+from app.modules.accounting.services.journal import (
+    ClosedPeriodError,
+    UnbalancedEntryError,
+    UnbalancedJournalEntryError,
+    create_journal_entry,
+)
+from app.modules.accounting.services.mappings import (
+    AccountMappingKey,
+    get_default_account,
+    get_default_account_code,
+    get_default_account_id,
+    resolve_default_accounts,
+)
+from app.modules.accounting.reports.trial_balance import generate_trial_balance
 from app.modules.accounting.schemas import (
     AccountBalanceResponse,
     AccountCreateRequest,
@@ -31,10 +46,8 @@ logger = logging.getLogger(__name__)
 
 
 # ── Custom Exceptions ─────────────────────────────────────────────────────────
-
-
-class UnbalancedEntryError(ValueError):
-    """Σ debits ≠ Σ credits — raised before any DB write."""
+# Re-exported from app.modules.accounting.services.journal:
+# UnbalancedEntryError, UnbalancedJournalEntryError
 
 
 class PostedEntryMutationError(PermissionError):
@@ -76,7 +89,7 @@ async def create_account(data: AccountCreateRequest, db: AsyncSession) -> Accoun
         code=data.code,
         name=data.name,
         name_ar=data.name_ar,
-        account_type=data.account_type,
+        type=data.account_type,
         is_system=data.is_system,
     )
     db.add(account)
@@ -186,14 +199,18 @@ async def create_draft_journal_entry(
     await db.flush()  # Get entry.id for FK in TransactionLine
 
     for line_data in data.lines:
-        # Fetch account name for snapshot (optional — graceful fallback)
+        # Fetch account id and name for snapshot
         acct_result = await db.execute(
-            select(Account.name).where(Account.code == line_data.account_code),
+            select(Account.id, Account.name).where(Account.code == line_data.account_code),
         )
-        account_name = acct_result.scalar_one_or_none() or line_data.account_code
+        acct_row = acct_result.one_or_none()
+        if not acct_row:
+            raise AccountNotFoundError(f"Account code '{line_data.account_code}' not found.")
+        acct_id, account_name = acct_row
 
         line = TransactionLine(
             journal_entry_id=entry.id,
+            account_id=acct_id,
             account_code=line_data.account_code,
             account_name=account_name,
             debit=line_data.debit,
@@ -296,6 +313,7 @@ async def create_reversing_entry(
     for line in original.lines:
         db.add(TransactionLine(
             journal_entry_id=reversing.id,
+            account_id=line.account_id,
             account_code=line.account_code,
             account_name=line.account_name,
             debit=line.credit,    # Swap debit ↔ credit

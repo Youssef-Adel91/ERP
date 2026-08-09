@@ -85,6 +85,12 @@ class InvoiceCreatedEvent(DomainEvent):
     event_type: str = "invoice.created"
 
 
+class InvoiceOverdueEvent(DomainEvent):
+    """Emitted by the Overdue Reminder Engine when an invoice passes its due date."""
+
+    event_type: str = "invoice.overdue"
+
+
 class PaymentReceivedEvent(DomainEvent):
     """Emitted by the Invoicing plugin when a payment is recorded."""
 
@@ -102,6 +108,39 @@ class TenantProvisionedEvent(DomainEvent):
 
     event_type: str = "tenant.provisioned"
     tenant_id: str = "system"  # system-level event has no tenant scope
+
+
+class WhatsAppMessageReceivedEvent(DomainEvent):
+    """
+    Emitted by app.plugins.whatsapp.api.webhooks.receive_webhook after it
+    resolves an inbound Meta webhook's phone_number_id back to a tenant
+    (via the public WhatsAppTenantConfig table). tenant_id is therefore
+    only known AFTER that lookup — unlike most events, it is not supplied
+    by an already-authenticated request.
+
+    Key payload fields:
+        phone_number_id, from_number, wa_message_id, message_type,
+        text_body (when message_type == "text"), raw_message
+    """
+
+    event_type: str = "whatsapp.message_received"
+
+
+class CaseStageTransitionedEvent(DomainEvent):
+    """
+    Emitted by the Case Engine on every stage transition.
+
+    Vertical plugins (Recruitment, Hospitality, Rental) subscribe to
+    "case.stage.transitioned" and filter on payload["plugin_key"] or
+    payload["case_type_code"] to handle only their own transitions.
+
+    Key payload fields:
+        case_id, case_type_code, plugin_key,
+        from_stage, to_stage, is_terminal,
+        resource_id, changed_by, reason
+    """
+
+    event_type: str = "case.stage.transitioned"
 
 
 # ── EventBus Abstract Interface ───────────────────────────────────────────────

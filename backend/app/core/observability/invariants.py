@@ -149,6 +149,70 @@ async def _check_outbox_health(session: AsyncSession) -> dict | None:
         return {"check": "outbox_health", "errors": details}
     return None
 
+async def _check_inventory_valuation(session: AsyncSession) -> dict | None:
+    """
+    Check 4: Valuation-to-GL Reconciliation Invariant (FR-328).
+    Ensures that the total value of inventory in CostLayers exactly equals the
+    balance of the Inventory Control Account in the GL.
+    """
+    from decimal import Decimal
+    
+    from sqlalchemy import text
+    from app.modules.accounting.models import Account
+    
+    # Resolve the dynamic Inventory Control Account
+    account_stmt = select(Account).where(
+        Account.is_system.is_(True),
+        Account.account_type == "INVENTORY",
+    )
+    control_accounts = (await session.execute(account_stmt)).scalars().all()
+    
+    if not control_accounts:
+        # If no control account exists, we can't perform this invariant check
+        return None
+        
+    errors = []
+    
+    for account in control_accounts:
+        # 1. Compute GL Balance for this account
+        gl_query = text(f"""
+            SELECT SUM(debit) - SUM(credit) as net_balance
+            FROM tenant.transaction_lines
+            WHERE account_code = :account_code
+        """)
+        gl_result = await session.execute(gl_query, {"account_code": account.code})
+        gl_balance_row = gl_result.fetchone()
+        gl_balance = Decimal(str(gl_balance_row.net_balance or 0))
+        
+        # 2. Compute CostLayer valuation for the warehouse(s) mapped to this account
+        # Assuming the account is global or we sum all warehouses if it's the only one.
+        # For a truly strictly mapped branch/warehouse, we'd filter by warehouse_id.
+        # But if there's only one inventory account, it holds all warehouse valuations.
+        val_query = text("""
+            SELECT SUM(qty_remaining * unit_cost_current) as total_valuation
+            FROM tenant.cost_layers
+            WHERE qty_remaining > 0
+        """)
+        val_result = await session.execute(val_query)
+        val_row = val_result.fetchone()
+        valuation = Decimal(str(val_row.total_valuation or 0))
+        
+        variance = abs(gl_balance - valuation)
+        
+        if variance > Decimal("0.0001"):
+            errors.append({
+                "account_code": account.code,
+                "gl_balance": float(gl_balance),
+                "valuation": float(valuation),
+                "variance": float(variance),
+                "error": "Valuation-to-GL mismatch",
+            })
+            
+    if errors:
+        return {"check": "inventory_valuation", "errors": errors}
+    return None
+
+
 
 async def run_all_invariants(session: AsyncSession, tenant_id: UUID) -> ReconciliationRun:
     """
@@ -166,6 +230,9 @@ async def run_all_invariants(session: AsyncSession, tenant_id: UUID) -> Reconcil
         
     res3 = await _check_outbox_health(session)
     if res3: failed_checks.append(res3)
+        
+    res4 = await _check_inventory_valuation(session)
+    if res4: failed_checks.append(res4)
         
     status = ReconciliationStatus.FAIL if failed_checks else ReconciliationStatus.PASS
     

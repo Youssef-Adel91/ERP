@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Omni ERP — Full E2E Dev Boot Script
     Starts Docker infrastructure, runs Alembic migrations, then launches
@@ -82,7 +82,7 @@ Write-Host "[2/4] Running Alembic migrations (alembic upgrade head)..." -Foregro
 
 Push-Location $BackendPath
 try {
-    & $AlembicExe upgrade head
+    & $AlembicExe -n public upgrade head
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Alembic migration failed. Check the output above." -ForegroundColor Red
         exit 1
@@ -137,3 +137,4 @@ Write-Host "║                                                      ║" -Foreg
 Write-Host "║  To stop:  docker compose down                       ║" -ForegroundColor DarkGray
 Write-Host "╚══════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
+

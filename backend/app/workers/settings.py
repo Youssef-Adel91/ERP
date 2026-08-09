@@ -7,7 +7,12 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 
 from app.core.config import settings
-from app.workers.tasks.main import reconcile_provisioning, run_invariants, trigger_relay
+from app.workers.tasks.main import (
+    reconcile_provisioning,
+    run_billing_cycle,
+    run_invariants,
+    trigger_relay,
+)
 
 # ARCH-401: Queue Tiering Constants
 QUEUE_CRITICAL = "arq:critical"   # Webhooks, synchronous-like background tasks
@@ -42,6 +47,12 @@ class WorkerSettings:
     cron_jobs = [
         # Aggressively drain the outbox every 1 second
         cron(trigger_relay, second=set(range(60))),
+        # Subscription renewal + dunning sweep — was previously nothing:
+        # process_failed_payment existed but had no scheduled trigger, so
+        # a non-paying tenant never actually got suspended. Runs once a
+        # day at 03:00 (low-traffic hour); the sweep is idempotent so a
+        # missed/retried run is harmless.
+        cron(run_billing_cycle, hour=3, minute=0),
     ]
     
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

@@ -3,7 +3,7 @@ export type Theme = 'light' | 'dark';
 
 export interface User {
   id: string;
-  tenantId: string;
+  tenantId?: string;
   name: string;
   email: string;
   phone?: string;

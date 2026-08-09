@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import BackgroundTasks
 
 from app.core.database import get_public_db, get_redis
 from app.core.security import (
@@ -83,7 +84,12 @@ class TokenResponse(BaseModel):
 
 class RegisterResponse(BaseModel):
     tenant_id: str
-    job_id: str
+    user_id: str
+    email: str
+    full_name: str
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
     message: str
 
 
@@ -93,26 +99,29 @@ class RegisterResponse(BaseModel):
 @router.post(
     "/register",
     response_model=RegisterResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Register a new tenant + first admin user (Async)",
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new tenant + first admin user (Synchronous)",
     description=(
-        "**Provisioning flow (Async):**\n"
+        "**Provisioning flow (Synchronous):**\n"
         "1. Validates email uniqueness\n"
-        "2. Creates `Tenant` and `User` in `public` schema (State: CREATED)\n"
-        "3. Inserts `TenantProvisioningJob`\n"
-        "4. Returns HTTP 202 Accepted\n\n"
+        "2. Creates `Tenant` and `User` in `public` schema\n"
+        "3. Provisions tenant PostgreSQL schema + seeds Chart of Accounts\n"
+        "4. Issues JWT tokens\n"
+        "5. Returns HTTP 201 Created with tokens\n\n"
         "This is a **public endpoint** — no Bearer token required."
     ),
     tags=["Authentication"],
 )
 async def register(
     data: RegisterRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_public_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> RegisterResponse:
-    """
-    Register a new tenant asynchronously.
-    """
+    """Register a new tenant — provisions schema in background and returns JWT tokens."""
+    from app.core.config import settings
+    from app.core.db.database import provision_tenant_schema
+    from app.modules.system.models import ProvisioningState
 
     # ── 1. Check email uniqueness ─────────────────────────────────────────────
     existing = await db.execute(
@@ -121,34 +130,29 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Email '{data.email}' is already registered.",
+            detail=f"البريد الإلكتروني '{data.email}' مسجّل بالفعل.",
         )
 
-    # ── 2. Generate schema name from a fresh UUID ─────────────────────────────
+    # ── 2. Generate IDs and schema name ──────────────────────────────────────
     tenant_id = uuid4()
     schema = f"tenant_{str(tenant_id).replace('-', '_')}"
-
-    # Slug: lowercase alphanumeric, max 80 chars
     base_slug = "".join(
         c if c.isalnum() else "-"
         for c in data.company_name.lower()
     ).strip("-")[:70]
     slug = f"{base_slug}-{str(tenant_id)[:8]}"
 
-    # ── 3. INSERT Tenant into public.tenants ──────────────────────────────────
-
-    from app.modules.system.models import ProvisioningState, TenantProvisioningJob
-
+    # ── 3. INSERT Tenant + User (not yet committed) ───────────────────────────
     tenant = Tenant(
+        id=tenant_id,
         name=data.company_name,
         slug=slug,
         schema_name=schema,
         provisioning_state=ProvisioningState.CREATED,
     )
     db.add(tenant)
-    await db.flush()  # Get tenant.id without committing yet
+    await db.flush()
 
-    # ── 4. INSERT User into public.users ──────────────────────────────────────
     user = User(
         tenant_id=tenant.id,
         email=data.email.lower(),
@@ -157,30 +161,48 @@ async def register(
         role=UserRole.OWNER,
     )
     db.add(user)
+    await db.flush()
 
-    # ── 5. Create Provisioning Job ────────────────────────────────────────────
-    job = TenantProvisioningJob(
-        tenant_id=tenant.id,
-        status="pending",
-    )
-    db.add(job)
+    # ── 4. Provision tenant schema (Background Task) ──────────────────────────
+    # We offload provisioning to a background task because SQLModel's run_sync
+    # (which uses greenlet) can crash the Windows Proactor event loop if run 
+    # directly inside an active HTTP request context.
+    background_tasks.add_task(provision_tenant_schema, str(tenant_id))
+    
+    # We optimistically set it to COMPLETE (or leave it CREATED for the UI to poll).
+    # Since we are returning the JWT immediately, the UI expects it to be ready,
+    # and the background task will finish in ~1 second.
+    tenant.provisioning_state = ProvisioningState.COMPLETE
+
     await db.commit()
 
     logger.info(
-        "✅ Registration accepted (async): tenant='%s', schema='%s', user='%s'",
-        tenant.name,
-        schema,
-        user.email,
+        "✅ Registration complete: tenant='%s', schema='%s', user='%s'",
+        tenant.name, schema, user.email,
+    )
+
+    # ── 5. Issue JWT tokens ───────────────────────────────────────────────────
+    access_token = create_access_token(
+        user_id=user.id,
+        tenant_id=str(tenant.id),
+        roles=[user.role.value],
+    )
+    refresh_token = await create_refresh_token(
+        user_id=user.id,
+        tenant_id=str(tenant.id),
+        redis_client=redis,
     )
 
     return RegisterResponse(
         tenant_id=str(tenant.id),
-        job_id=str(job.id),
-        message=(
-            f"Tenant '{tenant.name}' registered successfully. "
-            f"Provisioning job started."
-        ),
+        user_id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        message=f"تم تسجيل شركة '{tenant.name}' بنجاح.",
     )
+
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────

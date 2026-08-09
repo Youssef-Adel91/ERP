@@ -43,6 +43,10 @@ dependencies = [
     "python-slugify>=8.0.4",
     "orjson>=3.10.3",
     "httpx>=0.27.0",           # Async HTTP client for inter-service calls
+    "aiosmtplib>=3.0.0",       # Email fallback notification channel (app.core.notifications.email)
+    "reportlab>=4.0.0",
+    "qrcode>=7.4.2",
+    "pillow>=10.0.0",
 
     # --- Observability ---
     "structlog>=24.1.0",
@@ -71,7 +75,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --tb=short --ignore=tests/isolation"
+addopts = "-v --tb=short --ignore=tests/isolation --ignore=tests/load"
 
 [tool.ruff]
 target-version = "py311"

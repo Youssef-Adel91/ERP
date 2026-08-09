@@ -1,103 +1,56 @@
-import * as React from "react"
+import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils"
-
-function Card({
-  className,
-  size = "default",
-  ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+/**
+ * Card — the "glass-card" surface used across every Stitch reference
+ * (direction_6_*). Matches: `.glass-card p-card-padding rounded-xl
+ * shadow-sm hover:shadow-md transition-shadow` from the design system.
+ *
+ * Deliberately capped at `rounded-xl` (12px) — the design system's
+ * borderRadius scale tops out there (`DEFAULT`/`lg`/`xl`/`full`), so cards
+ * should never reach for `rounded-2xl` even though Tailwind config makes
+ * it technically available.
+ */
+export function Card({
+  children,
+  className = "",
+  hoverable = true,
+  padded = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  hoverable?: boolean;
+  padded?: boolean;
+}) {
   return (
     <div
-      data-slot="card"
-      data-size={size}
-      className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        className
-      )}
-      {...props}
-    />
-  )
+      className={[
+        "glass-card rounded-xl shadow-sm",
+        hoverable ? "hover:shadow-md transition-shadow" : "",
+        padded ? "p-card-padding" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </div>
+  );
 }
 
-function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
+/** Header row for a Card that contains a table/list — title + right-aligned meta (count, filter, etc). */
+export function CardHeader({
+  title,
+  meta,
+  className = "",
+}: {
+  title: string;
+  meta?: ReactNode;
+  className?: string;
+}) {
   return (
-    <div
-      data-slot="card-header"
-      className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-title"
-      className={cn(
-        "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
-function CardAction({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-action"
-      className={cn(
-        "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-content"
-      className={cn("px-(--card-spacing)", className)}
-      {...props}
-    />
-  )
-}
-
-function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn(
-        "flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing)",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-export {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardAction,
-  CardDescription,
-  CardContent,
+    <div className={`p-card-padding border-b border-outline-variant flex justify-between items-center ${className}`}>
+      <h4 className="font-headline-sm text-headline-sm text-on-surface">{title}</h4>
+      {meta}
+    </div>
+  );
 }

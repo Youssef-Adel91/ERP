@@ -83,6 +83,6 @@ def setup_logging(json_logs: bool = True, log_level: int = logging.INFO) -> None
     # Remove existing handlers to avoid duplicates
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
-        
     root_logger.addHandler(handler)
     root_logger.setLevel(log_level)
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)

@@ -8,6 +8,23 @@ Provides:
 """
 from __future__ import annotations
 
+# Python 3.10 -> 3.11+ compatibility shim. The codebase targets Python
+# 3.11+ (uses `from datetime import UTC` and `enum.StrEnum` directly,
+# confirmed by [tool.mypy] python_version = "3.11" in pyproject.toml and
+# the cpython-311 bytecode cache already present under tests/**/__pycache__
+# from this suite's original run). This sandbox only has Python 3.10
+# available, so both are polyfilled here, before any app.* import, purely
+# so the suite is runnable in this environment. Harmless no-op on 3.11+.
+import datetime as _datetime
+import enum as _enum
+
+if not hasattr(_datetime, "UTC"):
+    _datetime.UTC = _datetime.timezone.utc
+if not hasattr(_enum, "StrEnum"):
+    class _StrEnum(str, _enum.Enum):
+        pass
+    _enum.StrEnum = _StrEnum
+
 # Override settings BEFORE importing the app
 import os
 from collections.abc import AsyncGenerator
@@ -49,7 +66,13 @@ TestSessionLocal = async_sessionmaker(
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():
     """Create all tables in the in-memory test database for each test."""
-    # Import all models to register them with SQLModel.metadata
+    from app.modules.approvals import models as _m1  # noqa: F401
+    from app.modules.eta import models as _m2  # noqa: F401
+    from app.modules.finance import models as _m6  # noqa: F401
+    from app.modules.inventory import models as _m3  # noqa: F401
+    from app.modules.logistics import models as _m4  # noqa: F401
+    from app.modules.purchasing import models as _m5  # noqa: F401
+    from app.modules.trust import models as _m7  # noqa: F401
 
     async with test_engine.begin() as conn:
         conn_translated = await conn.execution_options(schema_translate_map={"tenant": None, "public": None})
@@ -114,7 +137,20 @@ async def seed_tenant_and_users(db_session: AsyncSession):
     )
     db_session.add(staff_user)
 
+    from datetime import UTC, datetime
+
+    from app.modules.accounting.models import AccountingPeriod
+
+    default_period = AccountingPeriod(
+        name="Default Open Test Period",
+        start_date=datetime(2020, 1, 1, tzinfo=UTC),
+        end_date=datetime(2035, 12, 31, tzinfo=UTC),
+        is_closed=False,
+    )
+    db_session.add(default_period)
+
     await db_session.commit()
+
 
 
 # ── Test Accounting Fixtures ──────────────────────────────────────────────────

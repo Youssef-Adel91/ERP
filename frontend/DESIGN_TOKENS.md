@@ -1,92 +1,80 @@
-# Trust Core — Design Tokens Reference
+# Nexus ERP — Design Tokens (Stitch direction_6, المعتمد)
 
-مرجع سريع لاستخدام الـ tokens في `tailwind.config.ts` مع المشروع
-(Next.js App Router + Tailwind + Shadcn UI، حسب `frontend_architecture_guide-v2.md`).
+هذا هو مرجع التصميم **الفعلي المطبَّق** في `frontend/` الحالي. المصدر الرسمي للتوكنز هو
+`stitch_egyptian_erp_design_system_generator/stitch_egyptian_erp_design_system_generator/direction_6_*/code.html`
+(10 ملفات، كلها بنفس التوكنز بالظبط — تم التحقق برمجيًا 2026-08-09).
 
-القيم دي مسحوبة مباشرة من ملف Figma (مش من عين)، فهي مطابقة 100% للتصميم المعتمد.
+> ملاحظة: فيه ملف `DESIGN_TOKENS.md` تاني في جذر المشروع (`../DESIGN_TOKENS.md`) — ده بتاع نظام تصميم **قديم** ("Trust Core" بألوان ink/accent/paper) كان مستخدم في `frontend_old/` بس، ومش مطبَّق في `frontend/` الحالي خالص. اتجاهله، ده مرجع الحقيقي.
 
 ---
 
-## الألوان — استخدام كل token فين بالظبط
+## الألوان (Material Design 3 — 47 توكن، مطابقة 100% لملفات Stitch)
 
-| Token | القيمة | يُستخدم في |
+كل القيم دي موجودة فعليًا في `frontend/src/app/globals.css` (تحت `:root`) ومربوطة في `frontend/tailwind.config.ts`. اتأكد بالمقارنة البرمجية إنها مطابقة حرفيًا (نفس القيم الست عشرية) للـ 10 ملفات المرجعية.
+
+| Token | القيمة | الاستخدام النموذجي |
 |---|---|---|
-| `ink` | `#040D1B` | خلفية القائمة الجانبية، عناوين الصفحات |
-| `ink-500` | `#45474C` | النص الأساسي على الخلفيات الفاتحة |
-| `ink-600` | `#1B1B1D` | نص عالي التمييز (أسماء، عناوين فرعية) |
-| `ink-400` | `#75777D` | نص ثانوي/مساعد |
-| `accent` | `#FF9800` | الأزرار الأساسية، العنصر النشط في القائمة، الروابط، الأيقونات المميزة |
-| `accent-hover` | `#E6890A` | حالة hover/active على الأزرار |
-| `accent-border` | `#653900` | خط التمييز الجانبي (border-right) للعنصر النشط في القائمة |
-| `accent-tint` | `#FFF3E0` | خلفيات خفيفة (badges، hover على صفوف الجدول) |
-| `paper` | `#FCF8FA` | خلفية الصفحة |
-| `paper-card` | `#FFFFFF` | الكروت واللوحات |
-| `paper-subtle` | `#F6F3F4` | رأس الجداول، خلفيات ثانوية |
-| `paper-border` | `#C5C6CC` | الحدود الافتراضية |
-| `paper-border-soft` | `#E4E2E3` | فواصل خفيفة (hairlines) |
-| `sidebar-text` | `#BEC7DB` | نص روابط القائمة الجانبية (غير نشط) |
-| `sidebar-subtitle` | `#818A9D` | "نظام إدارة المؤسسات" تحت الشعار |
-| `success` / `success-bg` | `#2E7D32` / `#E8F5E9` | حالة "نشط"، "مكتمل"، "متوافق" |
-| `danger` / `danger-bg` | `#BA1A1A` / `#FFEBEE` | حالة "متوقف"، "غير متوافق"، أرقام سلبية |
-| `warning` / `warning-bg` | `#F9A825` / `#FFFDE7` | حالة "قيد المراجعة"، "قيد الانتظار" |
+| `primary` | `#00288e` | الأزرار الأساسية، العنصر النشط في القائمة، الروابط |
+| `on-primary` | `#ffffff` | نص فوق `primary` |
+| `primary-container` | `#1e40af` | خلفيات أيقونات مميزة، شارات |
+| `on-primary-container` | `#a8b8ff` | نص فوق `primary-container` |
+| `secondary` | `#006a61` | مؤشرات إيجابية (trend up)، حالات "نشط" |
+| `secondary-container` | `#86f2e4` | خلفيات خفيفة لمؤشرات إيجابية |
+| `tertiary` | `#440098` | لون ثالث للتنويع البصري (رسوم بيانية، أيقونات) |
+| `tertiary-container` | `#5f00d1` | خلفيات مرتبطة بـ tertiary |
+| `error` | `#ba1a1a` | أخطاء، مؤشرات سلبية، حذف |
+| `error-container` | `#ffdad6` | خلفيات خفيفة للأخطاء |
+| `background` / `surface` | `#f8f9fa` | خلفية الصفحة |
+| `on-surface` | `#191c1d` | نص أساسي |
+| `on-surface-variant` | `#444653` | نص ثانوي |
+| `surface-container-lowest` | `#ffffff` | الكروت البيضاء |
+| `surface-container-low` | `#f3f4f5` | رؤوس الجداول، خلفيات هادئة |
+| `surface-container` / `-high` / `-highest` | `#edeeef` / `#e7e8e9` / `#e1e3e4` | طبقات تظليل متدرجة |
+| `outline` | `#757684` | حدود، أيقونات ثانوية، نص خافت |
+| `outline-variant` | `#c4c5d5` | حدود خفيفة (hairlines) |
 
-**القاعدة:** أي لون مش في الجدول ده معناه مش من نظام التصميم المعتمد — لو محتاج لون جديد، ارجع للألوان دي الأول وشوف لو تقدر تعبر عنه بيها قبل ما تضيف لون جديد.
+القائمة الكاملة (47 توكن) موجودة في `globals.css`. **الإضافات الوحيدة** فوق نظام Stitch الرسمي هي `success`/`success-bg` و`warning`/`warning-bg` (لأن Stitch نفسه بيعيد استخدام `secondary`/`error` كمؤشرات إيجابي/سلبي بدل ما يعرّف ألوان حالة مخصصة) — دول إضافيين آمنين ومتوافقين بصريًا، مش تعارض.
 
 ---
 
 ## الخطوط
 
-```ts
-fontFamily: {
-  sans: ["IBM Plex Sans Arabic", "IBM Plex Sans", "sans-serif"], // كل نصوص الواجهة (عربي + إنجليزي)
-  mono: ["JetBrains Mono", "IBM Plex Mono", "monospace"],        // كل الأرقام والعملات فقط
-}
+```
+Manrope   → العناوين (headline-sm/md/lg)
+Inter     → كل النصوص العادية (body-sm/md/lg, data-mono, label-caps)
 ```
 
-**قاعدة مهمة:** أي رقم مالي أو عداد (أرصدة، أسعار، تواريخ رقمية) لازم يستخدم `font-mono` ويتعرض LTR حتى جوه الصفحة الـ RTL — استخدم:
+محمّلين فعليًا في `frontend/src/app/layout.tsx` عبر `next/font/google`. القيم بالبكسل (`fontSize`) مطابقة حرفيًا لملفات Stitch:
 
-```tsx
-<span className="font-mono" dir="ltr">١٢,٤٥٠.٠٠</span>
-```
-
-### تحميل الخطوط في Next.js (`app/layout.tsx`)
-
-الخطوط دي مش من Google Fonts القياسية بنفس الاسم — `IBM Plex Sans Arabic` موجود على Google Fonts، لكن `JetBrains Mono` كمان متاح. مثال التحميل:
-
-```tsx
-import { IBM_Plex_Sans_Arabic, JetBrains_Mono } from "next/font/google";
-
-const plexArabic = IBM_Plex_Sans_Arabic({
-  subsets: ["arabic", "latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono",
-});
-```
-
-ثم في `tailwind.config.ts` تربط `fontFamily.sans`/`mono` بـ `var(--font-sans)` / `var(--font-mono)` بدل الاسم المباشر — أدق وأسرع في التحميل.
-
----
-
-## الـ Border Radius
-
-| Token | القيمة | يُستخدم في |
+| Token | الحجم | الوزن |
 |---|---|---|
-| `rounded-sm` | 2px | أزرار صغيرة، أيقونات مربعة |
-| `rounded` (default) | 4px | الكروت، الجداول، معظم العناصر |
-| `rounded-md` | 8px | صور/شعارات مربعة |
-| `rounded-lg` | 12px | أفاتار دائري، شارات (badges) |
-| `rounded-xl` | 16px | عناصر بارزة كبيرة |
+| `headline-lg` | 28px / lh 36px | 700 |
+| `headline-md` | 20px / lh 28px | 600 |
+| `headline-sm` | 16px / lh 24px | 600 |
+| `body-lg` | 16px / lh 24px | 400 |
+| `body-md` | 14px / lh 20px | 400 |
+| `body-sm` | 12px / lh 16px | 400 |
+| `data-mono` | 14px / lh 20px | 600 (استخدمها لأي رقم/عملة، دايمًا مع `dir="ltr"`) |
+| `label-caps` | 11px / lh 16px, letter-spacing 0.05em | 700 |
 
 ---
 
-## ملاحظات وتحذيرات
+## Border Radius
 
-- **`accent-border` (`#653900`)**: ده لون قديم من قبل تصحيح الألوان (كان اللون الأساسي `#8B5000`)، وقف موجود بس كخط تمييز جانبي رفيع للعنصر النشط. شكله متناسق بصريًا مع `#FF9800` (ظل غامق منه)، فسبناه كما هو. لو حبيت توحّد الدرجات بدقة أكتر تقدر تولّد ظل غامق برمجيًا من `#FF9800` بدل القيمة الثابتة دي.
-- **خطوط زيادة ظهرت في الفحص** (`Nimbus Sans`, `FreeSerif`): دي مش جزء من نظام التصميم — على الأغلب خطوط احتياطية (fallback) استخدمها Figma في حروف/رموز نادرة مش موجودة في IBM Plex Sans Arabic. تجاهلها.
-- **RTL افتراضي**: الواجهة كلها مصممة عربي RTL كلغة أساسية، والإنجليزي LTR كلغة ثانوية عبر زرار تبديل. لما تبني الـ layout، استخدم `dir="rtl"` على `<html>` كافتراضي، وابني كل الـ spacing بمنطق منطقي (`ms-`/`me-` بدل `ml-`/`mr-`) عشان يتقلب صح مع اللغة.
+Stitch الرسمي بيعرّف **4 قيم بس**: `DEFAULT` (4px)، `lg` (8px)، `xl` (12px)، `full` (دائري كامل). التطبيق الحالي عنده كمان `sm` و`md` و`2xl` كإضافات — استخدمها بحذر، لكن **الكروت والعناصر الرئيسية في كل الصفحات لازم تستخدم `rounded-xl` بالظبط زي المرجع، مش `rounded-2xl`** (كان فيه انحراف بسيط عن كده في نسخة تجريبية سابقة من `dashboard/page.tsx`، تم تصحيحه).
+
+## Spacing
+
+`base` (4px), `compact-padding` (8px), `gutter` (16px), `card-padding` (20px), `container-margin` (24px) — مطابقة حرفيًا لـ Stitch.
+
+---
+
+## مكونات متكررة (مستخرجة من الـ 10 مرجعيات)
+
+- **الهيدر (TopNavBar)**: ثابت (`fixed top-0`)، ارتفاع `h-16`، خلفية `bg-surface`، حد سفلي `border-outline-variant`، شعار "Nexus ERP" بلون `text-primary` و`font-headline-md`.
+- **القائمة الجانبية (SideNavBar)**: عرض `w-64`، خلفية بيضاء، العنصر النشط: `bg-secondary-container text-on-secondary-container border-r-4 border-primary`. زرار تسجيل الخروج في الأسفل بلون `text-error`.
+- **الكروت**: كلاس `.glass-card` (شفافية 95% + `backdrop-blur` + حد `outline-variant`) مع `p-card-padding rounded-xl shadow-sm hover:shadow-md`.
+- **بادجات الحالة**: `px-2 py-0.5 rounded` بخلفية شفافة من لون الحالة (`bg-secondary-container/20 text-secondary` لإيجابي، `bg-error-container/20 text-error` لسلبي).
+- **الجداول**: رأس بخلفية `surface-container-low`، صفوف بفاصل `divide-outline-variant/30`، hover بخلفية `surface-container-lowest`.
+
+هذه الأنماط اتلخّصت في مكونات React مشتركة تحت `frontend/src/components/ui/` (`Card`, `Badge`, `DataTable`) — استخدمها بدل تكرار الـ classNames في كل صفحة.

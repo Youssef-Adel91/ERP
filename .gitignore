@@ -74,3 +74,12 @@ $RECYCLE.BIN/
 *.log
 logs/
 test_output.txt
+
+# ── Legacy / Other projects (do NOT push to ERP repo) ────────────────────────
+frontend_old/
+src_old/
+stitch_egyptian_erp_design_system_generator/
+
+# ── Scratch / one-off scripts ─────────────────────────────────────────────────
+backend/fix_*.py
+backend/test_*.py

@@ -1,106 +1,130 @@
 import type { Config } from "tailwindcss";
 
-/**
- * Design tokens extracted directly from the "Trust Core" Figma file
- * (ERP Project — Page 1) via the Figma Plugin API, not eyeballed from
- * screenshots. Values reflect what's actually bound to nodes across all
- * 9 screens (Login, Dashboard, Contacts Directory, Contact Detail,
- * Financial Core, Transactions, Compliance, Reports, Plugins Marketplace,
- * Settings).
- *
- * Pairs with: frontend_architecture_guide-v2.md
- * (Next.js App Router + Tailwind CSS + Shadcn UI + RTL-first Arabic)
- */
 const config: Config = {
-  darkMode: "class",
   content: [
-    "./src/**/*.{ts,tsx}",
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        // Sidebar / primary surface — near-black navy, NOT pure black
-        ink: {
-          DEFAULT: "#040D1B", // sidebar background, page headings
-          50: "#F4F5F7",
-          100: "#E8EAEE",
-          400: "#75777D", // secondary text on light surfaces
-          500: "#45474C", // primary body text on light surfaces
-          600: "#1B1B1D", // strong text / high-emphasis labels
-        },
+        // Nexus ERP — Material Design 3 token set
+        primary: "var(--primary)",
+        "on-primary": "var(--on-primary)",
+        "primary-container": "var(--primary-container)",
+        "on-primary-container": "var(--on-primary-container)",
+        "inverse-primary": "var(--inverse-primary)",
+        "primary-fixed": "var(--primary-fixed)",
+        "primary-fixed-dim": "var(--primary-fixed-dim)",
+        "on-primary-fixed": "var(--on-primary-fixed)",
+        "on-primary-fixed-variant": "var(--on-primary-fixed-variant)",
 
-        // Single accent color across the whole product (buttons, active
-        // states, links, highlights). #8B5000 was the old value — every
-        // instance has been swapped to #FF9800.
-        accent: {
-          DEFAULT: "#FF9800",
-          hover: "#E6890A",   // ~10% darker, for :hover / :active states
-          border: "#653900",  // active sidebar item left-border accent
-          tint: "#FFF3E0",    // light background tint (badges, hovers)
-        },
+        secondary: "var(--secondary)",
+        "on-secondary": "var(--on-secondary)",
+        "secondary-container": "var(--secondary-container)",
+        "on-secondary-container": "var(--on-secondary-container)",
+        "secondary-fixed": "var(--secondary-fixed)",
+        "secondary-fixed-dim": "var(--secondary-fixed-dim)",
+        "on-secondary-fixed": "var(--on-secondary-fixed)",
+        "on-secondary-fixed-variant": "var(--on-secondary-fixed-variant)",
 
-        // Neutral / "paper" family — backgrounds, borders, dividers
-        paper: {
-          DEFAULT: "#FCF8FA", // app background
-          card: "#FFFFFF",    // card / panel surfaces
-          subtle: "#F6F3F4",  // table header bg, secondary surfaces
-          border: "#C5C6CC",  // default border
-          "border-soft": "#E4E2E3", // hairline / low-emphasis border
-        },
+        tertiary: "var(--tertiary)",
+        "on-tertiary": "var(--on-tertiary)",
+        "tertiary-container": "var(--tertiary-container)",
+        "on-tertiary-container": "var(--on-tertiary-container)",
+        "tertiary-fixed": "var(--tertiary-fixed)",
+        "tertiary-fixed-dim": "var(--tertiary-fixed-dim)",
+        "on-tertiary-fixed": "var(--on-tertiary-fixed)",
+        "on-tertiary-fixed-variant": "var(--on-tertiary-fixed-variant)",
 
-        // Sidebar-specific text colors (on the dark #040D1B surface)
-        sidebar: {
-          DEFAULT: "#040D1B",
-          text: "#BEC7DB",     // nav link text (inactive)
-          subtitle: "#818A9D", // "نظام إدارة المؤسسات" under the logo
-          "text-active": "#FFFFFF",
-        },
+        error: "var(--error)",
+        "on-error": "var(--on-error)",
+        "error-container": "var(--error-container)",
+        "on-error-container": "var(--on-error-container)",
 
-        // Semantic / status colors — used ONLY for status pills, badges,
-        // and financial +/- indicators. Never used decoratively.
+        background: "var(--background)",
+        "on-background": "var(--on-background)",
+
+        surface: "var(--surface)",
+        "on-surface": "var(--on-surface)",
+        "surface-variant": "var(--surface-variant)",
+        "on-surface-variant": "var(--on-surface-variant)",
+        "surface-dim": "var(--surface-dim)",
+        "surface-bright": "var(--surface-bright)",
+        "surface-tint": "var(--surface-tint)",
+        "surface-container-lowest": "var(--surface-container-lowest)",
+        "surface-container-low": "var(--surface-container-low)",
+        "surface-container": "var(--surface-container)",
+        "surface-container-high": "var(--surface-container-high)",
+        "surface-container-highest": "var(--surface-container-highest)",
+
+        "inverse-surface": "var(--inverse-surface)",
+        "inverse-on-surface": "var(--inverse-on-surface)",
+
+        outline: "var(--outline)",
+        "outline-variant": "var(--outline-variant)",
+
+        // Legacy semantic aliases kept for a smooth migration
         success: {
-          DEFAULT: "#2E7D32",
-          bg: "#E8F5E9",
+          DEFAULT: "var(--success)",
+          bg: "var(--success-bg)",
         },
         danger: {
-          DEFAULT: "#BA1A1A",
-          bg: "#FFEBEE",
+          DEFAULT: "var(--error)",
+          bg: "var(--error-container)",
         },
         warning: {
-          DEFAULT: "#F9A825",
-          bg: "#FFFDE7",
+          DEFAULT: "var(--warning)",
+          bg: "var(--warning-bg)",
         },
       },
-
       fontFamily: {
-        // Single bilingual family for Arabic + Latin UI text
-        sans: ["IBM Plex Sans Arabic", "IBM Plex Sans", "sans-serif"],
-        // Numeric / currency figures — always rendered LTR even in RTL context
-        mono: ["JetBrains Mono", "IBM Plex Mono", "monospace"],
+        sans: ["var(--font-inter)", "var(--font-sans)", "IBM Plex Sans Arabic", "IBM Plex Sans", "sans-serif"],
+        headline: ["var(--font-manrope)", "var(--font-sans)", "IBM Plex Sans Arabic", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "IBM Plex Mono", "monospace"],
+        "headline-lg": ["var(--font-manrope)", "var(--font-sans)", "sans-serif"],
+        "headline-md": ["var(--font-manrope)", "var(--font-sans)", "sans-serif"],
+        "headline-sm": ["var(--font-manrope)", "var(--font-sans)", "sans-serif"],
+        "body-lg": ["var(--font-inter)", "var(--font-sans)", "sans-serif"],
+        "body-md": ["var(--font-inter)", "var(--font-sans)", "sans-serif"],
+        "body-sm": ["var(--font-inter)", "var(--font-sans)", "sans-serif"],
+        "data-mono": ["var(--font-mono)", "monospace"],
+        "label-caps": ["var(--font-inter)", "var(--font-sans)", "sans-serif"],
       },
-
       fontSize: {
-        xs: "10px",
-        "xs-plus": "11px",
-        sm: "12px",
-        base: "14px",
-        md: "16px",
-        lg: "20px",
-        xl: "28px",
-        "2xl": "30px",
+        "headline-lg": ["28px", { lineHeight: "36px", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "headline-md": ["20px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }],
+        "headline-sm": ["16px", { lineHeight: "24px", fontWeight: "600" }],
+        "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+        "body-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+        "data-mono": ["14px", { lineHeight: "20px", fontWeight: "600" }],
+        "label-caps": ["11px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "700" }],
       },
-
       borderRadius: {
-        none: "0px",
-        sm: "2px",
-        DEFAULT: "4px",
-        md: "8px",
-        lg: "12px",
-        xl: "16px",
+        sm: "0.25rem",
+        DEFAULT: "0.25rem",
+        md: "0.5rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        "2xl": "1rem",
+        full: "9999px",
+      },
+      spacing: {
+        base: "4px",
+        "compact-padding": "8px",
+        gutter: "16px",
+        "card-padding": "20px",
+        "container-margin": "24px",
+      },
+      boxShadow: {
+        card: "0px 4px 12px rgba(0,0,0,0.03)",
+        overlay: "0px 10px 30px rgba(0,0,0,0.08)",
       },
     },
   },
   plugins: [],
 };
-
 export default config;

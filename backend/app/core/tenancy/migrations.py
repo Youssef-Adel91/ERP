@@ -1,8 +1,14 @@
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# backend/ — the directory containing alembic.ini. Subprocess calls below
+# MUST run with this as cwd, since alembic.ini's [tenant]/[public] sections
+# use paths (script_location = alembic/tenant) relative to it.
+_BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
 
 class TenantMigrationOrchestrator:
@@ -21,6 +27,7 @@ class TenantMigrationOrchestrator:
             sys.executable, "-m", "alembic", "-n", "public", "upgrade", "head",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=_BACKEND_ROOT,
         )
         stdout, stderr = await process.communicate()
         if process.returncode != 0:
@@ -36,12 +43,37 @@ class TenantMigrationOrchestrator:
                 sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema_name}", "upgrade", "head",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=_BACKEND_ROOT,
             )
             stdout, stderr = await process.communicate()
             if process.returncode != 0:
                 logger.error(f"Tenant {schema_name} migration failed:\n{stderr.decode()}")
                 raise RuntimeError(f"Tenant {schema_name} migration failed: {stderr.decode()}")
             logger.info(f"Tenant {schema_name} migration completed successfully.")
+
+    async def stamp_tenant(self, schema_name: str) -> None:
+        """
+        Marks a tenant schema as already being at the latest migration
+        revision WITHOUT running any DDL. For backfilling tenants that were
+        provisioned via the old create_all() path (so their tables already
+        exist but they have no alembic_version row) — run this ONCE per
+        pre-existing tenant before switching provisioning over to
+        _migrate_tenant, otherwise the next real migration will try to
+        recreate tables that already exist and fail.
+        """
+        async with self.semaphore:
+            logger.info(f"Stamping tenant schema {schema_name} as head (no DDL)...")
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema_name}", "stamp", "head",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=_BACKEND_ROOT,
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                logger.error(f"Tenant {schema_name} stamp failed:\n{stderr.decode()}")
+                raise RuntimeError(f"Tenant {schema_name} stamp failed: {stderr.decode()}")
+            logger.info(f"Tenant {schema_name} stamped at head successfully.")
 
     async def run_tenant_migrations(self, schemas: list[str]) -> None:
         """Execute migrations concurrently for all provided tenant schemas."""

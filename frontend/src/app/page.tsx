@@ -1,766 +1,461 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  motion,
-  useInView,
-  useScroll,
-  useTransform,
-  AnimatePresence,
-} from "framer-motion";
-import {
-  Package,
-  BookOpen,
-  Truck,
-  Building2,
-  ShieldCheck,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  ArrowLeft,
-  ChevronDown,
-  BarChart3,
-  Zap,
-  Menu,
-  X,
+  Wallet, TrendingUp, Package, Users, Truck, Plane, Coffee, Car,
+  ShieldCheck, Zap, Brain, BarChart3, MessageSquareText, ArrowLeft,
+  CheckCircle2, Star, Play, ChevronDown, Globe, Phone, Mail,
+  LayoutDashboard, Receipt, Store, Building2, CreditCard, PackageCheck,
+  Megaphone, BotMessageSquare, LineChart, Search, Lock, Sparkles,
 } from "lucide-react";
-import { useRef, useState, useEffect } from "react";
 
-// ─── Animation Variants ────────────────────────────────────────────────────────
+// ── Animated Counter ──────────────────────────────────────────────────────────
+function Counter({ to, suffix = "", prefix = "" }: { to: number; suffix?: string; prefix?: string }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      let start = 0;
+      const step = Math.ceil(to / 60);
+      const timer = setInterval(() => {
+        start = Math.min(start + step, to);
+        setCount(start);
+        if (start >= to) clearInterval(timer);
+      }, 20);
+    }, { threshold: 0.5 });
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [to]);
+  return <span ref={ref}>{prefix}{count.toLocaleString("ar-EG")}{suffix}</span>;
+}
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 32 },
-  visible: (delay = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.65, ease: [0.22, 1, 0.36, 1] as any, delay },
-  }),
-};
+// ── Data ──────────────────────────────────────────────────────────────────────
+const modules = [
+  { icon: Wallet,         title: "المحاسبة والمالية",         desc: "دفتر أستاذ، توازن تلقائي، وتقارير مالية لحظية.", badge: "الأكثر طلباً", color: "from-blue-600 to-blue-800" },
+  { icon: Receipt,        title: "الفاتورة الإلكترونية",      desc: "متوافق 100% مع منظومة مصلحة الضرائب المصرية.", badge: "ETA متوافق", color: "from-emerald-600 to-emerald-800" },
+  { icon: TrendingUp,     title: "المبيعات وعروض الأسعار",    desc: "إدارة العملاء، العروض، الفواتير وقنوات البيع.", badge: null, color: "from-violet-600 to-violet-800" },
+  { icon: Store,          title: "نقاط البيع (POS)",           desc: "واجهة سريعة للكاشير مع دعم الباركود والطابعات.", badge: "جديد", color: "from-orange-600 to-orange-800" },
+  { icon: Package,        title: "المخزون والمستودعات",        desc: "تتبع الأصناف، المخازن المتعددة وأوامر الشراء.", badge: null, color: "from-cyan-600 to-cyan-800" },
+  { icon: Users,          title: "الموارد البشرية",            desc: "التوظيف، الرواتب، الحضور والتأمينات الاجتماعية.", badge: null, color: "from-pink-600 to-pink-800" },
+  { icon: PackageCheck,   title: "الشحن والتوصيل",             desc: "ربط شركات الشحن المحلية وتتبع الطلبات لحظياً.", badge: null, color: "from-teal-600 to-teal-800" },
+  { icon: Building2,      title: "إدارة الفروع",               desc: "لوحة مركزية تحكم فيها جميع فروعك من مكان واحد.", badge: null, color: "from-indigo-600 to-indigo-800" },
+  { icon: Plane,          title: "السياحة والسفر",             desc: "حجوزات الطيران، الفنادق ومتابعة ملفات العملاء.", badge: null, color: "from-sky-600 to-sky-800" },
+  { icon: Coffee,         title: "المطاعم والضيافة",           desc: "منيو رقمي، إدارة الطاولات ونقاط بيع سريعة.", badge: null, color: "from-amber-600 to-amber-800" },
+  { icon: Car,            title: "تأجير السيارات",             desc: "إدارة الأسطول، العقود وتتبع الصيانة الدورية.", badge: null, color: "from-red-600 to-red-800" },
+  { icon: CreditCard,     title: "الاشتراك والفوترة",          desc: "إدارة خطط الاشتراك وفواتير العملاء تلقائياً.", badge: null, color: "from-purple-600 to-purple-800" },
+];
 
-const fadeIn = {
-  hidden: { opacity: 0 },
-  visible: (delay = 0) => ({
-    opacity: 1,
-    transition: { duration: 0.5, delay },
-  }),
-};
+const aiFeatures = [
+  { icon: LineChart,         title: "تحليل مالي ذكي",       desc: "توقع التدفق النقدي واكتشاف الشذوذات المالية تلقائياً بالذكاء الاصطناعي." },
+  { icon: BotMessageSquare,  title: "مساعد عربي بالـ AI",   desc: "اسأل المساعد بالعربية عن أي تقرير أو بيانات وهو يجيبك فوراً." },
+  { icon: Search,            title: "كشف الغش والأخطاء",    desc: "يراقب كل العمليات ويبعتلك تنبيه لو في حاجة غير طبيعية." },
+  { icon: Megaphone,         title: "توقع المبيعات",         desc: "خوارزميات ML بتتوقعلك المبيعات للشهر القادم بدقة عالية." },
+];
 
-const staggerContainer = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.12, delayChildren: 0.1 },
-  },
-};
+const testimonials = [
+  { name: "أحمد الشناوي", role: "مدير مالي تنفيذي", company: "شركة النصر للتجارة", text: "وفّرنا 40% من وقت الفريق المالي بعد ما طبّقنا Nexus ERP. الفواتير الإلكترونية بقت تتعمل تلقائي بالكامل.", rating: 5 },
+  { name: "منى إبراهيم",  role: "مديرة العمليات",   company: "مجموعة الدلتا للمقاولات", text: "الداشبورد بيدّيني نظرة كاملة على كل الفروع في ثواني. ما كانتش عندنا رؤية كده قبل كده.", rating: 5 },
+  { name: "خالد محمود",   role: "صاحب مشروع",       company: "متاجر الحرية - 12 فرع", text: "بدأت بفرع واحد وعدّيت على 12 فرع من غير ما أحتاج أشتري سوفت وير جديد. الـ pricing عادل جداً.", rating: 5 },
+];
 
-const cardVariant = {
-  hidden: { opacity: 0, y: 28, scale: 0.97 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as any },
-  },
-};
+const stats = [
+  { value: 1200, suffix: "+", label: "عميل نشط" },
+  { value: 19,   suffix: "+", label: "موديول متكامل" },
+  { value: 99.9, suffix: "%", label: "uptime مضمون", isFloat: true },
+  { value: 4,    suffix: " دول", label: "تشغيل فعلي" },
+];
 
-// ─── Navbar ────────────────────────────────────────────────────────────────────
-
+// ── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    const handler = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handler);
+    return () => window.removeEventListener("scroll", handler);
   }, []);
 
   return (
-    <motion.nav
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] as any }}
-      className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-[#040D1B]/95 backdrop-blur-md border-b border-white/10 shadow-xl"
-          : "bg-transparent"
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        {/* Logo — right side in RTL */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#FF9800] flex items-center justify-center shadow-lg shadow-[#FF9800]/30">
-            <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+    <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100" : "bg-transparent"}`}>
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between" dir="rtl">
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="w-9 h-9 bg-[#00288e] rounded-xl flex items-center justify-center shadow">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-5 h-5 fill-white">
+              <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
+            </svg>
           </div>
-          <span className="font-bold text-white text-[17px] tracking-tight">
-            Trust Core
-          </span>
-          <span className="hidden sm:block text-[11px] text-[#BEC7DB] border border-white/15 rounded px-1.5 py-0.5">
-            ERP
-          </span>
-        </div>
+          <span className={`font-bold text-lg tracking-tight ${scrolled ? "text-[#00288e]" : "text-white"}`}>Nexus ERP</span>
+        </Link>
 
-        {/* Desktop Actions */}
-        <div className="hidden sm:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-[#BEC7DB] hover:text-white text-[14px] font-medium transition-colors px-3 py-1.5"
-          >
+        <nav className={`hidden md:flex items-center gap-6 text-sm font-medium ${scrolled ? "text-gray-600" : "text-white/90"}`}>
+          {[["الوحدات","#modules"],["الذكاء الاصطناعي","#ai"],["آراء العملاء","#testimonials"],["الأسعار","#pricing"]].map(([label, href]) => (
+            <a key={href} href={href} className="hover:text-[#00288e] transition-colors">{label}</a>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-3">
+          <Link href="/login" className={`hidden sm:block text-sm font-semibold px-4 py-1.5 rounded-lg transition-all ${scrolled ? "text-[#00288e] hover:bg-blue-50" : "text-white hover:bg-white/10"}`}>
             تسجيل الدخول
           </Link>
-          <Link
-            href="/register"
-            className="bg-[#FF9800] hover:bg-[#E6890A] text-white text-[14px] font-semibold px-4 py-2 rounded-lg transition-all duration-200 shadow-lg shadow-[#FF9800]/25 hover:shadow-[#FF9800]/40 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            ابدأ مجاناً
+          <Link href="/register" className="bg-[#00288e] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[#001f6e] transition-all shadow hover:shadow-md active:scale-95">
+            ابدأ مجاناً ←
           </Link>
         </div>
-
-        {/* Mobile menu toggle */}
-        <button
-          className="sm:hidden text-white p-1"
-          onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="القائمة"
-        >
-          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
       </div>
-
-      {/* Mobile dropdown */}
-      <AnimatePresence>
-        {menuOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="sm:hidden bg-[#040D1B]/97 backdrop-blur-md border-t border-white/10 overflow-hidden"
-          >
-            <div className="px-4 py-4 flex flex-col gap-3">
-              <Link
-                href="/login"
-                className="text-[#BEC7DB] text-[15px] py-2 hover:text-white transition-colors"
-                onClick={() => setMenuOpen(false)}
-              >
-                تسجيل الدخول
-              </Link>
-              <Link
-                href="/register"
-                className="bg-[#FF9800] text-white text-[15px] font-semibold px-4 py-2.5 rounded-lg text-center"
-                onClick={() => setMenuOpen(false)}
-              >
-                ابدأ مجاناً
-              </Link>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.nav>
+    </header>
   );
 }
 
-// ─── Hero Section ──────────────────────────────────────────────────────────────
-
-function HeroSection() {
-  const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 500], [0, -80]);
-  const opacity = useTransform(scrollY, [0, 400], [1, 0.3]);
-
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function LandingPage() {
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-[#040D1B] px-4 text-center">
-      {/* Ambient glow */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-[#FF9800]/8 rounded-full blur-[120px]" />
-        <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] bg-[#FF9800]/5 rounded-full blur-[80px]" />
+    <div className="min-h-screen bg-white overflow-x-hidden font-sans" dir="rtl">
+      <Navbar />
+
+      {/* ── HERO ───────────────────────────────────────────────────────────── */}
+      <section className="relative min-h-screen flex items-center justify-center text-center overflow-hidden">
+        {/* Background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00288e] via-[#0a1f6b] to-[#440098]" />
         {/* Grid overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: `linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)`,
-            backgroundSize: "60px 60px",
-          }}
-        />
-      </div>
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.1) 1px,transparent 1px)", backgroundSize: "60px 60px" }} />
+        {/* Blobs */}
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
 
-      <motion.div style={{ y, opacity }} className="relative z-10 max-w-4xl">
-        {/* Badge */}
-        <motion.div
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          custom={0}
-          className="inline-flex items-center gap-2 bg-[#FF9800]/12 border border-[#FF9800]/30 text-[#FF9800] text-[12px] font-semibold px-4 py-1.5 rounded-full mb-8"
-        >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          شبكة الثقة للتجار المصريين
-        </motion.div>
+        <div className="relative z-10 max-w-5xl mx-auto px-6 pt-24 pb-16">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white/90 px-4 py-1.5 rounded-full text-sm font-medium mb-8 backdrop-blur-sm">
+            <Sparkles className="w-4 h-4 text-yellow-400" />
+            <span>مدعوم بالذكاء الاصطناعي — مصنوع للسوق المصري</span>
+          </div>
 
-        {/* Headline */}
-        <motion.h1
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          custom={0.1}
-          className="text-[clamp(2.2rem,5.5vw,4rem)] font-bold text-white leading-[1.15] tracking-tight mb-6"
-        >
-          أوقف خسائر الإرجاع{" "}
-          <span className="relative">
-            <span className="text-[#FF9800]">قبل الشحن</span>
-            <motion.span
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              transition={{ delay: 0.7, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -bottom-1 left-0 right-0 h-[3px] bg-gradient-to-l from-[#FF9800]/0 via-[#FF9800] to-[#FF9800]/0 origin-right"
-            />
-          </span>
-          {" "}واضبط محاسبتك تلقائياً
-        </motion.h1>
+          <h1 className="text-5xl md:text-7xl font-black text-white leading-tight mb-6 tracking-tight">
+            المرجع الرقمي
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-l from-yellow-300 to-orange-300">
+              للتاجر المصري
+            </span>
+          </h1>
 
-        {/* Subheadline */}
-        <motion.p
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          custom={0.2}
-          className="text-[clamp(1rem,2vw,1.25rem)] text-[#BEC7DB] leading-relaxed max-w-2xl mx-auto mb-10"
-        >
-          نظام التشغيل الشامل للتجار والموزعين المصريين — إدارة مخزون، محاسبة
-          مزدوجة تلقائية، وشبكة ثقة تكشف أرقام الهاتف الخطرة قبل شحن الطلبات.
-        </motion.p>
+          <p className="text-xl md:text-2xl text-white/80 max-w-3xl mx-auto mb-10 leading-relaxed">
+            منصة SaaS متكاملة تجمع كل اللي محتاجه تجارتك —
+            <strong className="text-white"> محاسبة، مبيعات، مخزون، HR، الفاتورة الإلكترونية </strong>
+            وأكتر من 19 نظام — كلهم في مكان واحد بقوة الـ AI.
+          </p>
 
-        {/* CTAs */}
-        <motion.div
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          custom={0.3}
-          className="flex flex-col sm:flex-row items-center justify-center gap-3"
-        >
-          <Link
-            href="/register"
-            id="hero-cta-primary"
-            className="group relative bg-[#FF9800] hover:bg-[#E6890A] text-white font-bold text-[16px] px-8 py-3.5 rounded-xl transition-all duration-200 shadow-xl shadow-[#FF9800]/30 hover:shadow-[#FF9800]/50 hover:scale-[1.03] active:scale-[0.97] flex items-center gap-2"
-          >
-            ابدأ مجاناً الآن
-            <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-          </Link>
-          <a
-            href="#features"
-            id="hero-cta-secondary"
-            className="group text-[#BEC7DB] hover:text-white font-semibold text-[15px] px-6 py-3.5 rounded-xl border border-white/15 hover:border-white/30 transition-all duration-200 flex items-center gap-2 hover:bg-white/5"
-          >
-            استعرض المميزات
-            <ChevronDown className="w-4 h-4 transition-transform group-hover:translate-y-0.5" />
-          </a>
-        </motion.div>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+            <Link href="/register"
+              className="bg-white text-[#00288e] font-black text-lg px-10 py-4 rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2">
+              ابدأ مجاناً الآن
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <a href="#modules"
+              className="border-2 border-white/40 text-white font-bold text-lg px-8 py-4 rounded-xl hover:bg-white/10 transition-all flex items-center justify-center gap-2">
+              <Play className="w-5 h-5" />
+              شوف كيف يشتغل
+            </a>
+          </div>
 
-        {/* Trust signals */}
-        <motion.div
-          variants={fadeIn}
-          initial="hidden"
-          animate="visible"
-          custom={0.5}
-          className="mt-14 flex flex-wrap items-center justify-center gap-6 text-[12px] text-[#75777D]"
-        >
-          {["بدون بطاقة ائتمان", "نسخة تجريبية 14 يوم", "دعم عربي كامل", "تشفير بنكي SSL"].map(
-            (t) => (
-              <span key={t} className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#FF9800]/70" />
-                {t}
-              </span>
-            )
-          )}
-        </motion.div>
-      </motion.div>
-
-      {/* Scroll indicator */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.2 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-      >
-        <motion.div
-          animate={{ y: [0, 8, 0] }}
-          transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-          className="w-5 h-8 border-2 border-white/20 rounded-full flex justify-center pt-1.5"
-        >
-          <div className="w-1 h-2 bg-[#FF9800]/70 rounded-full" />
-        </motion.div>
-      </motion.div>
-    </section>
-  );
-}
-
-// ─── Trust Network / "Moat" Section ───────────────────────────────────────────
-
-function TrustNetworkSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-80px" });
-
-  const riskEntries = [
-    { phone: "01xxxxxxxxx8", status: "safe", label: "موثوق — 12 طلب ناجح", color: "text-[#2E7D32]", bg: "bg-[#E8F5E9]", icon: CheckCircle2 },
-    { phone: "01xxxxxxxxx4", status: "risky", label: "مخاطرة عالية — 3 مرتجعات", color: "text-[#BA1A1A]", bg: "bg-[#FFEBEE]", icon: XCircle },
-    { phone: "01xxxxxxxxx1", status: "warning", label: "تحت المراقبة — طلب جديد", color: "text-[#F9A825]", bg: "bg-[#FFFDE7]", icon: AlertTriangle },
-  ];
-
-  return (
-    <section ref={ref} className="relative py-24 bg-[#FCF8FA] overflow-hidden">
-      {/* Decorative blob */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-[#FF9800]/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
-          {/* Text side */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate={isInView ? "visible" : "hidden"}
-          >
-            <motion.span
-              variants={fadeUp}
-              className="inline-flex items-center gap-2 bg-[#FF9800]/10 text-[#FF9800] text-[12px] font-bold px-3 py-1.5 rounded-full mb-5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              شبكة الثقة — الميزة الحصرية
-            </motion.span>
-
-            <motion.h2
-              variants={fadeUp}
-              className="text-[clamp(1.8rem,3.5vw,2.8rem)] font-bold text-[#040D1B] leading-[1.2] mb-5"
-            >
-              اعرف مَن تشحن له{" "}
-              <span className="text-[#FF9800]">قبل أن تدفع</span>
-            </motion.h2>
-
-            <motion.p
-              variants={fadeUp}
-              className="text-[#45474C] text-[15px] leading-relaxed mb-8"
-            >
-              كل رقم هاتف في منظومة التجار يبني سجلاً تلقائياً من الطلبات
-              والمرتجعات. قبل شحن أي طلب، يُظهر النظام{" "}
-              <strong className="text-[#040D1B]">تصنيف الثقة الفوري</strong> لهذا
-              الرقم — مما يقطع سلسلة خسائر COD من مصدرها.
-            </motion.p>
-
-            <motion.div variants={fadeUp} className="flex flex-col gap-3">
-              {[
-                "رصد تلقائي لأرقام الإرجاع عبر شبكة التجار",
-                "تنبيهات لحظية قبل تأكيد الشحن",
-                "تقارير خسائر COD مجمّعة شهرياً",
-              ].map((item) => (
-                <div key={item} className="flex items-start gap-3">
-                  <div className="mt-0.5 w-5 h-5 rounded-full bg-[#FF9800]/12 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-3 h-3 text-[#FF9800]" />
-                  </div>
-                  <span className="text-[#45474C] text-[14px]">{item}</span>
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
+            {stats.map((s) => (
+              <div key={s.label} className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-4">
+                <div className="text-3xl font-black text-white mb-1">
+                  {s.isFloat
+                    ? <span>{s.value}{s.suffix}</span>
+                    : <Counter to={s.value as number} suffix={s.suffix} />
+                  }
                 </div>
-              ))}
-            </motion.div>
-          </motion.div>
-
-          {/* Visual card */}
-          <motion.div
-            initial={{ opacity: 0, x: -30, scale: 0.96 }}
-            animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
-          >
-            <div className="bg-white rounded-2xl border border-[#C5C6CC]/60 shadow-2xl shadow-[#040D1B]/8 overflow-hidden">
-              {/* Header bar */}
-              <div className="bg-[#040D1B] px-5 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-[#FF4444]" />
-                  <div className="w-3 h-3 rounded-full bg-[#FF9800]" />
-                  <div className="w-3 h-3 rounded-full bg-[#2E7D32]" />
-                </div>
-                <div className="flex items-center gap-2 text-[#BEC7DB] text-[12px]">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#FF9800]" />
-                  بوابة التحقق من الشحن
-                </div>
-                <div className="w-8" />
+                <div className="text-white/70 text-sm">{s.label}</div>
               </div>
-
-              <div className="p-6">
-                {/* Order summary */}
-                <div className="bg-[#F6F3F4] rounded-xl p-4 mb-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[#75777D] text-[12px]">طلب رقم</span>
-                    <span className="font-mono text-[12px] text-[#040D1B] font-semibold">#ORD-20240724</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[#75777D] text-[12px]">القيمة</span>
-                    <span className="font-mono text-[14px] text-[#040D1B] font-bold">3,450.00 ج.م</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#75777D] text-[12px]">الدفع</span>
-                    <span className="bg-[#FFFDE7] text-[#F9A825] text-[11px] font-semibold px-2 py-0.5 rounded-full">كاش عند الاستلام</span>
-                  </div>
-                </div>
-
-                {/* Risk entries */}
-                <div className="space-y-3">
-                  <p className="text-[#75777D] text-[11px] font-semibold uppercase tracking-wide mb-2">فحص شبكة الثقة</p>
-                  {riskEntries.map((entry, i) => {
-                    const Icon = entry.icon;
-                    return (
-                      <motion.div
-                        key={entry.phone}
-                        initial={{ opacity: 0, x: 16 }}
-                        animate={isInView ? { opacity: 1, x: 0 } : {}}
-                        transition={{ delay: 0.4 + i * 0.12, duration: 0.4 }}
-                        className="flex items-center justify-between p-3 bg-[#F6F3F4] rounded-xl border border-[#E4E2E3]"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 ${entry.bg} rounded-lg flex items-center justify-center`}>
-                            <Icon className={`w-4 h-4 ${entry.color}`} />
-                          </div>
-                          <div>
-                            <p className="font-mono text-[13px] text-[#040D1B] font-semibold">{entry.phone}</p>
-                            <p className={`text-[11px] ${entry.color} font-medium`}>{entry.label}</p>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                {/* Action */}
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <button className="bg-[#FFEBEE] text-[#BA1A1A] text-[13px] font-semibold py-2.5 rounded-lg hover:bg-[#FFCDD2] transition-colors">
-                    تعليق الطلب
-                  </button>
-                  <button className="bg-[#FF9800] text-white text-[13px] font-semibold py-2.5 rounded-lg hover:bg-[#E6890A] transition-colors shadow-lg shadow-[#FF9800]/25">
-                    تأكيد الشحن
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+            ))}
+          </div>
         </div>
-      </div>
-    </section>
-  );
-}
 
-// ─── Features Grid ─────────────────────────────────────────────────────────────
+        {/* Scroll hint */}
+        <a href="#modules" className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/50 hover:text-white/80 transition-colors animate-bounce">
+          <ChevronDown className="w-8 h-8" />
+        </a>
+      </section>
 
-const features = [
-  {
-    icon: Building2,
-    title: "ERP متعدد الشركات",
-    desc: "أدر عدة كيانات تجارية من لوحة واحدة مع عزل كامل للبيانات وقاعدة بيانات منفصلة لكل مستأجر.",
-    badge: "Multi-Tenant",
-    color: "#3B82F6",
-    bg: "#EFF6FF",
-  },
-  {
-    icon: BookOpen,
-    title: "محاسبة مزدوجة تلقائية",
-    desc: "كل فاتورة وكل دفعة تولّد قيود محاسبية تلقائياً بنظام القيد المزدوج — صفر أخطاء يدوية.",
-    badge: "Auto Journal",
-    color: "#10B981",
-    bg: "#ECFDF5",
-  },
-  {
-    icon: Package,
-    title: "مخزون وأوامر شراء",
-    desc: "تتبع المخزون الفعلي والمتوقع، أنشئ أوامر شراء، وتلقَّ تنبيهات نقص المخزون فوراً.",
-    badge: "Inventory",
-    color: "#FF9800",
-    bg: "#FFF3E0",
-  },
-  {
-    icon: Truck,
-    title: "تتبع الشحن الفوري",
-    desc: "ربط مباشر مع شركات الشحن المصرية — تتبع كل طلب من المستودع حتى باب العميل.",
-    badge: "Shipping",
-    color: "#8B5CF6",
-    bg: "#F5F3FF",
-  },
-];
-
-function FeaturesSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-60px" });
-
-  return (
-    <section id="features" ref={ref} className="py-24 bg-[#040D1B] relative overflow-hidden">
-      {/* ambient glows */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-[#FF9800]/6 rounded-full blur-[80px]" />
-        <div className="absolute top-1/2 left-0 w-64 h-64 bg-[#3B82F6]/5 rounded-full blur-[60px]" />
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
-        {/* Section header */}
-        <motion.div
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
-          variants={staggerContainer}
-          className="text-center mb-16"
-        >
-          <motion.span
-            variants={fadeUp}
-            className="inline-flex items-center gap-2 bg-[#FF9800]/12 border border-[#FF9800]/25 text-[#FF9800] text-[12px] font-bold px-3 py-1.5 rounded-full mb-5"
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            كل ما تحتاجه في مكان واحد
-          </motion.span>
-
-          <motion.h2
-            variants={fadeUp}
-            className="text-[clamp(1.8rem,3.5vw,2.8rem)] font-bold text-white leading-tight mb-4"
-          >
-            منظومة متكاملة مصممة{" "}
-            <span className="text-[#FF9800]">للتاجر المصري</span>
-          </motion.h2>
-
-          <motion.p
-            variants={fadeUp}
-            className="text-[#BEC7DB] text-[15px] max-w-xl mx-auto"
-          >
-            كل أداة مبنية على فهم عميق لتحديات التجارة المحلية والموزعين الكبار.
-          </motion.p>
-        </motion.div>
-
-        {/* Cards grid */}
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
-          className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5"
-        >
-          {features.map((f) => {
-            const Icon = f.icon;
-            return (
-              <motion.div
-                key={f.title}
-                variants={cardVariant}
-                whileHover={{ y: -6, transition: { duration: 0.25 } }}
-                className="group bg-[#1B1B1D] hover:bg-[#242428] border border-white/8 hover:border-[#FF9800]/25 rounded-2xl p-6 cursor-default transition-colors duration-300 relative overflow-hidden"
-              >
-                {/* Card glow on hover */}
-                <div
-                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl pointer-events-none"
-                  style={{
-                    background: `radial-gradient(circle at 50% 0%, ${f.color}10 0%, transparent 70%)`,
-                  }}
-                />
-
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 shadow-lg"
-                  style={{ backgroundColor: f.bg }}
-                >
-                  <Icon className="w-5 h-5" style={{ color: f.color }} />
-                </div>
-
-                <div
-                  className="text-[10px] font-bold tracking-widest uppercase mb-3 px-2 py-0.5 rounded-full inline-block"
-                  style={{ color: f.color, backgroundColor: f.bg }}
-                >
-                  {f.badge}
-                </div>
-
-                <h3 className="text-white font-bold text-[15px] mb-2.5 leading-snug">
-                  {f.title}
-                </h3>
-                <p className="text-[#75777D] group-hover:text-[#BEC7DB] text-[13px] leading-relaxed transition-colors duration-300">
-                  {f.desc}
-                </p>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-// ─── Social Proof Strip ────────────────────────────────────────────────────────
-
-function SocialProofSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-40px" });
-
-  const stats = [
-    { value: "12,000+", label: "طلب يومي تحت الإدارة" },
-    { value: "98.4%", label: "دقة القيود المحاسبية" },
-    { value: "35%", label: "انخفاض في مرتجعات COD" },
-    { value: "< 2 ث", label: "زمن استجابة API" },
-  ];
-
-  return (
-    <section ref={ref} className="py-16 bg-[#FCF8FA] border-y border-[#C5C6CC]/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-8"
-        >
-          {stats.map((s) => (
-            <motion.div
-              key={s.label}
-              variants={cardVariant}
-              className="text-center"
-            >
-              <div className="text-[clamp(1.8rem,4vw,2.8rem)] font-bold text-[#FF9800] font-mono leading-none mb-2">
-                {s.value}
-              </div>
-              <div className="text-[#75777D] text-[13px]">{s.label}</div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-// ─── Final CTA Band ────────────────────────────────────────────────────────────
-
-function CTABand() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-40px" });
-
-  return (
-    <section
-      ref={ref}
-      className="relative py-24 bg-gradient-to-b from-[#040D1B] to-[#0A1628] overflow-hidden"
-    >
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[#FF9800]/8 rounded-full blur-[100px]" />
-      </div>
-
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-10">
-        <motion.div
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
-          variants={staggerContainer}
-        >
-          <motion.h2
-            variants={fadeUp}
-            className="text-[clamp(1.8rem,4vw,3rem)] font-bold text-white leading-tight mb-4"
-          >
-            جاهز تبدأ تحكم في تجارتك؟
-          </motion.h2>
-          <motion.p
-            variants={fadeUp}
-            className="text-[#BEC7DB] text-[16px] mb-10"
-          >
-            انضم لآلاف التجار الذين يديرون مخزونهم ومحاسبتهم من مكان واحد.
-          </motion.p>
-          <motion.div
-            variants={fadeUp}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-          >
-            <Link
-              href="/register"
-              id="cta-band-register"
-              className="group bg-[#FF9800] hover:bg-[#E6890A] text-white font-bold text-[16px] px-10 py-4 rounded-xl transition-all duration-200 shadow-2xl shadow-[#FF9800]/30 hover:shadow-[#FF9800]/50 hover:scale-[1.03] active:scale-[0.97] flex items-center gap-2"
-            >
-              ابدأ مجاناً — 14 يوم تجريبي
-              <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-            </Link>
-            <Link
-              href="/login"
-              id="cta-band-login"
-              className="text-[#BEC7DB] hover:text-white font-semibold text-[15px] px-6 py-4 rounded-xl border border-white/15 hover:border-white/30 transition-all duration-200 hover:bg-white/5"
-            >
-              لدي حساب بالفعل
-            </Link>
-          </motion.div>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-// ─── Footer ────────────────────────────────────────────────────────────────────
-
-function Footer() {
-  const links = {
-    المنتج: [
-      { label: "المميزات", href: "#features" },
-      { label: "الأسعار", href: "#" },
-      { label: "التوثيق", href: "#" },
-      { label: "قائمة الانتظار", href: "/register" },
-    ],
-    الشركة: [
-      { label: "من نحن", href: "#" },
-      { label: "المدونة", href: "#" },
-      { label: "التوظيف", href: "#" },
-      { label: "تواصل معنا", href: "#" },
-    ],
-    قانوني: [
-      { label: "سياسة الخصوصية", href: "/privacy" },
-      { label: "الشروط والأحكام", href: "/terms" },
-    ],
-  };
-
-  return (
-    <footer className="bg-[#040D1B] border-t border-white/8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-14">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
-          {/* Brand */}
-          <div>
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-[#FF9800] flex items-center justify-center shadow-lg shadow-[#FF9800]/30">
-                <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
-              </div>
-              <span className="font-bold text-white text-[16px]">Trust Core ERP</span>
+      {/* ── MODULES MARKETPLACE ─────────────────────────────────────────────── */}
+      <section id="modules" className="py-24 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-blue-50 text-[#00288e] px-4 py-1.5 rounded-full text-sm font-bold mb-4">
+              <Store className="w-4 h-4" />
+              Marketplace الأنظمة
             </div>
-            <p className="text-[#75777D] text-[13px] leading-relaxed max-w-xs">
-              نظام إدارة الأعمال الأكثر شمولاً للتجار والموزعين في مصر.
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
+              كل اللي محتاجه <span className="text-[#00288e]">في مكان واحد</span>
+            </h2>
+            <p className="text-xl text-gray-500 max-w-2xl mx-auto">
+              اشترك في الأنظمة اللي تحتاجها بس — وزود لما تكبر. بدون تعقيدات.
             </p>
           </div>
 
-          {/* Links */}
-          {Object.entries(links).map(([group, items]) => (
-            <div key={group}>
-              <h4 className="text-white font-semibold text-[13px] mb-4">{group}</h4>
-              <ul className="space-y-2.5">
-                {items.map((item) => (
-                  <li key={item.label}>
-                    <Link
-                      href={item.href}
-                      className="text-[#75777D] hover:text-[#FF9800] text-[13px] transition-colors duration-150"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {modules.map((mod) => (
+              <div key={mod.title}
+                className="group bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 cursor-pointer">
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow`}>
+                  <mod.icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-bold text-gray-900 text-base leading-tight">{mod.title}</h3>
+                  {mod.badge && (
+                    <span className="text-[10px] font-bold bg-[#00288e]/10 text-[#00288e] px-2 py-0.5 rounded-full whitespace-nowrap mr-1">
+                      {mod.badge}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 leading-relaxed">{mod.desc}</p>
+                <div className="mt-4 flex items-center gap-1 text-[#00288e] text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span>اعرف أكتر</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            ))}
+          </div>
 
-        {/* Bottom bar */}
-        <div className="border-t border-white/8 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-[#75777D] text-[12px]">
-            © {new Date().getFullYear()} Trust Core ERP. جميع الحقوق محفوظة.
-          </p>
-          <div className="flex items-center gap-1 text-[#75777D] text-[12px]">
-            <span>صُنع بـ</span>
-            <span className="text-[#FF9800]">♥</span>
-            <span>في مصر</span>
+          <div className="text-center mt-12">
+            <Link href="/register"
+              className="inline-flex items-center gap-2 bg-[#00288e] text-white font-bold text-lg px-10 py-4 rounded-xl hover:bg-[#001f6e] transition-all shadow-lg hover:shadow-xl active:scale-95">
+              ابدأ تجربتك المجانية
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <p className="text-gray-400 text-sm mt-3">لا بطاقة ائتمانية — 14 يوم مجاناً</p>
           </div>
         </div>
-      </div>
-    </footer>
-  );
-}
+      </section>
 
-// ─── Page Assembly ─────────────────────────────────────────────────────────────
+      {/* ── AI SECTION ──────────────────────────────────────────────────────── */}
+      <section id="ai" className="py-24 bg-gradient-to-br from-[#00288e] to-[#440098] overflow-hidden relative">
+        <div className="absolute inset-0 opacity-5"
+          style={{ backgroundImage: "radial-gradient(circle at 2px 2px, white 1px, transparent 0)", backgroundSize: "40px 40px" }} />
 
-export default function LandingPage() {
-  return (
-    <main className="min-h-screen font-sans">
-      <Navbar />
-      <HeroSection />
-      <SocialProofSection />
-      <TrustNetworkSection />
-      <FeaturesSection />
-      <CTABand />
-      <Footer />
-    </main>
+        <div className="relative max-w-7xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white px-4 py-1.5 rounded-full text-sm font-bold mb-4">
+              <Brain className="w-4 h-4 text-yellow-400" />
+              الذكاء الاصطناعي
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
+              مش بس نظام ERP —<br />
+              <span className="text-yellow-300">مساعد ذكي بالعربي</span>
+            </h2>
+            <p className="text-xl text-white/70 max-w-2xl mx-auto">
+              خدمات الذكاء الاصطناعي مدمجة في كل وحدة عشان تساعدك تاخد قرارات أسرع وأذكى.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {aiFeatures.map((f) => (
+              <div key={f.title}
+                className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all group">
+                <div className="w-12 h-12 bg-yellow-400/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-yellow-400/30 transition-colors">
+                  <f.icon className="w-6 h-6 text-yellow-300" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">{f.title}</h3>
+                <p className="text-white/70 leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* AI Demo Card */}
+          <div className="mt-12 bg-white/10 backdrop-blur border border-white/20 rounded-3xl p-8 max-w-2xl mx-auto">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center">
+                <BotMessageSquare className="w-5 h-5 text-gray-900" />
+              </div>
+              <div>
+                <p className="font-bold text-white">مساعد Nexus</p>
+                <p className="text-white/50 text-xs">متصل الآن</p>
+              </div>
+              <span className="mr-auto w-2 h-2 bg-green-400 rounded-full" />
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="bg-white/10 rounded-2xl rounded-tl-none p-3 text-white/90 max-w-xs">
+                إيه المنتج الأكتر مبيعاً الشهر ده؟
+              </div>
+              <div className="bg-yellow-400 rounded-2xl rounded-tr-none p-3 text-gray-900 font-medium max-w-xs mr-auto text-left" dir="rtl">
+                🏆 المنتج الأعلى مبيعاً هو <strong>"كابل USB-C"</strong> بـ 1,240 وحدة — زيادة 18% عن الشهر اللي فات.
+              </div>
+              <div className="bg-white/10 rounded-2xl rounded-tl-none p-3 text-white/90 max-w-xs">
+                وإيه توقعك للشهر الجاي؟
+              </div>
+              <div className="flex items-center gap-2 text-white/40 text-xs">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                  <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+                </span>
+                Nexus AI بيفكر...
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ────────────────────────────────────────────────────── */}
+      <section id="testimonials" className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-4 py-1.5 rounded-full text-sm font-bold mb-4">
+              <CheckCircle2 className="w-4 h-4" />
+              قصص نجاح حقيقية
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
+              بيقولوا عنّا إيه؟
+            </h2>
+            <p className="text-xl text-gray-500">آراء من شركات مصرية فعلاً بتستخدم Nexus ERP</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {testimonials.map((t) => (
+              <div key={t.name} className="bg-gray-50 rounded-2xl p-6 border border-gray-100 hover:shadow-lg transition-shadow">
+                <div className="flex gap-0.5 mb-4">
+                  {Array.from({ length: t.rating }).map((_, i) => (
+                    <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                  ))}
+                </div>
+                <p className="text-gray-700 leading-relaxed mb-6 text-sm">"{t.text}"</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00288e] to-[#440098] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {t.name[0]}
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900 text-sm">{t.name}</p>
+                    <p className="text-gray-500 text-xs">{t.role} · {t.company}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PRICING TEASER ──────────────────────────────────────────────────── */}
+      <section id="pricing" className="py-24 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <div className="inline-flex items-center gap-2 bg-blue-50 text-[#00288e] px-4 py-1.5 rounded-full text-sm font-bold mb-6">
+            <CreditCard className="w-4 h-4" />
+            التسعير
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
+            ابدأ مجاناً —
+            <span className="text-[#00288e]"> ادفع لما تكبر</span>
+          </h2>
+          <p className="text-xl text-gray-500 mb-12 max-w-2xl mx-auto">
+            مفيش رسوم أولية. تدفع حسب الوحدات اللي بتستخدمها فعلاً. اشتراك شهري بسيط يبدأ من 299 ج.م / شهر.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            {[
+              { name: "Starter", price: "299", desc: "لأصحاب المشاريع والمتاجر الصغيرة", features: ["5 مستخدمين", "3 وحدات", "10,000 فاتورة/شهر", "دعم عبر الواتساب"] },
+              { name: "Business", price: "899", desc: "للشركات المتنامية", features: ["25 مستخدماً", "كل الوحدات", "فواتير غير محدودة", "AI تحليلات", "دعم أولوية"], popular: true },
+              { name: "Enterprise", price: "مخصص", desc: "للمجموعات والشركات الكبرى", features: ["مستخدمين غير محدودين", "فروع غير محدودة", "تكامل مخصص", "مدير حساب مخصص", "SLA 99.9%"] },
+            ].map((plan) => (
+              <div key={plan.name}
+                className={`relative rounded-2xl p-6 text-right border ${plan.popular ? "bg-[#00288e] border-transparent shadow-2xl scale-105 text-white" : "bg-white border-gray-100"}`}>
+                {plan.popular && (
+                  <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-yellow-400 text-gray-900 text-xs font-black px-4 py-1 rounded-full whitespace-nowrap">
+                    ⭐ الأكثر شعبية
+                  </div>
+                )}
+                <h3 className={`font-black text-xl mb-1 ${plan.popular ? "text-white" : "text-gray-900"}`}>{plan.name}</h3>
+                <p className={`text-sm mb-4 ${plan.popular ? "text-blue-200" : "text-gray-500"}`}>{plan.desc}</p>
+                <div className={`text-3xl font-black mb-6 ${plan.popular ? "text-white" : "text-gray-900"}`}>
+                  {plan.price === "مخصص" ? plan.price : <>{plan.price}<span className="text-base font-normal mr-1">ج.م / شهر</span></>}
+                </div>
+                <ul className="space-y-2 mb-6">
+                  {plan.features.map((f) => (
+                    <li key={f} className={`flex items-center gap-2 text-sm ${plan.popular ? "text-blue-100" : "text-gray-600"}`}>
+                      <CheckCircle2 className={`w-4 h-4 flex-shrink-0 ${plan.popular ? "text-yellow-300" : "text-green-500"}`} />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/register"
+                  className={`block w-full py-3 rounded-xl font-bold text-center transition-all ${plan.popular ? "bg-white text-[#00288e] hover:bg-blue-50" : "bg-[#00288e] text-white hover:bg-[#001f6e]"}`}>
+                  ابدأ الآن
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA BANNER ──────────────────────────────────────────────────────── */}
+      <section className="py-20 bg-gradient-to-l from-[#00288e] to-[#440098] relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: "radial-gradient(circle at 2px 2px, white 1px, transparent 0)", backgroundSize: "32px 32px" }} />
+        <div className="relative max-w-4xl mx-auto px-6 text-center">
+          <h2 className="text-4xl md:text-5xl font-black text-white mb-6">
+            جاهز تبدأ رحلة الرقمنة؟
+          </h2>
+          <p className="text-xl text-white/80 mb-10 max-w-xl mx-auto">
+            انضم لأكتر من 1,200 تاجر مصري بيديروا أعمالهم بذكاء مع Nexus ERP.
+          </p>
+          <Link href="/register"
+            className="inline-flex items-center gap-3 bg-white text-[#00288e] font-black text-xl px-12 py-5 rounded-2xl hover:shadow-2xl hover:scale-105 transition-all duration-200">
+            أنشئ حسابك المجاني
+            <ArrowLeft className="w-6 h-6" />
+          </Link>
+          <p className="text-white/50 text-sm mt-4">بدون بطاقة ائتمان · 14 يوم تجربة مجانية · إلغاء في أي وقت</p>
+        </div>
+      </section>
+
+      {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
+      <footer className="bg-gray-950 text-gray-400 py-12 px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            <div className="col-span-2 md:col-span-1">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-[#00288e] rounded-lg flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-4 h-4 fill-white">
+                    <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
+                  </svg>
+                </div>
+                <span className="font-bold text-white">Nexus ERP</span>
+              </div>
+              <p className="text-sm leading-relaxed">المرجع الرقمي للتاجر المصري — نظام إدارة متكامل مصنوع للسوق المصري.</p>
+            </div>
+
+            {[
+              { title: "الأنظمة", links: ["المحاسبة", "المبيعات", "المخزون", "الموارد البشرية", "الفاتورة الإلكترونية"] },
+              { title: "الشركة", links: ["عن Nexus", "المدونة", "الوظائف", "اتصل بنا"] },
+              { title: "الدعم", links: ["مركز المساعدة", "الوثائق التقنية", "حالة الخدمة", "شروط الخصوصية"] },
+            ].map((col) => (
+              <div key={col.title}>
+                <h4 className="text-white font-bold mb-4 text-sm">{col.title}</h4>
+                <ul className="space-y-2">
+                  {col.links.map((link) => (
+                    <li key={link}><a href="#" className="text-sm hover:text-white transition-colors">{link}</a></li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-gray-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-sm">© {new Date().getFullYear()} Nexus ERP. جميع الحقوق محفوظة.</p>
+            <div className="flex items-center gap-4 text-sm">
+              <a href="mailto:youssefffadel555@gmail.com" className="flex items-center gap-1 hover:text-white transition-colors">
+                <Mail className="w-3.5 h-3.5" />
+                youssefffadel555@gmail.com
+              </a>
+              <div className="flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5" />
+                مصر · السعودية · الإمارات · الكويت
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

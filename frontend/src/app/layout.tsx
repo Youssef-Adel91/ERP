@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans_Arabic, JetBrains_Mono } from "next/font/google";
-import { ReactQueryProvider } from "@/components/providers/react-query-provider";
-import { Toaster } from "@/components/ui/sonner";
+import { IBM_Plex_Sans_Arabic, JetBrains_Mono, Manrope, Inter } from "next/font/google";
+import { QueryProvider } from "@/lib/query-provider";
 import "./globals.css";
 
 const plexArabic = IBM_Plex_Sans_Arabic({
@@ -16,9 +15,21 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
+const manrope = Manrope({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-manrope",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+});
+
 export const metadata: Metadata = {
-  title: "Trust Core ERP",
-  description: "Modular ERP System",
+  title: "المرجع الرقمي للتاجر المصري - Nexus ERP",
+  description: "Enterprise Resource Planning for Egyptian Merchants",
 };
 
 export default function RootLayout({
@@ -27,16 +38,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ar"
-      dir="rtl"
-      className={`${plexArabic.variable} ${jetbrainsMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col font-sans">
-        <ReactQueryProvider>
-          {children}
-        </ReactQueryProvider>
-        <Toaster />
+    <html lang="ar" dir="rtl">
+      <body
+        className={`${plexArabic.variable} ${jetbrainsMono.variable} ${manrope.variable} ${inter.variable} font-sans bg-surface text-on-surface min-h-screen antialiased`}
+      >
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

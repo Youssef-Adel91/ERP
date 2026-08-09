@@ -279,7 +279,8 @@ async def create_invoice(
     )
 
     event_bus = get_event_bus()
-    await event_bus.publish(event)
+    await event_bus.publish(event, session=db)
+    await db.commit()
 
     logger.info(
         "📤 Published invoice.created event (event_id=%s) for invoice %s",

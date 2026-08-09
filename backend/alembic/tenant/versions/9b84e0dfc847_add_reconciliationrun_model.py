@@ -32,7 +32,7 @@ def upgrade() -> None:
     schema_name = _get_schema()
     
     op.execute(f"DROP TYPE IF EXISTS {schema_name}.reconciliationstatus CASCADE")
-    
+
     op.create_table('reconciliation_runs',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -40,7 +40,7 @@ def upgrade() -> None:
     sa.Column('created_by', sa.Uuid(), nullable=True),
     sa.Column('updated_by', sa.Uuid(), nullable=True),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('status', sa.Enum('PASS', 'FAIL', 'ERROR', name='reconciliationstatus', schema=schema_name, create_type=False), nullable=False),
+    sa.Column('status', sa.Enum('PASS', 'FAIL', 'ERROR', name='reconciliationstatus', schema=schema_name), nullable=False),
     sa.Column('failed_checks', sa.JSON(), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     schema=schema_name,
