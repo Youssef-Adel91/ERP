@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   CheckSquare,
   Check,
@@ -73,7 +73,7 @@ export default function ApprovalsPage() {
       } else if (err.response?.status === 409) {
         setGlobalError(err.response.data?.detail || "هذا الطلب لم يعد بانتظار قرار (ربما تم اتخاذ قرار بشأنه بالفعل).");
       } else {
-        setGlobalError(err.response?.data?.detail || "تعذر تسجيل القرار.");
+        setGlobalError(pickDetail(err, "تعذر تسجيل القرار."));
       }
     },
     onSettled: () => {

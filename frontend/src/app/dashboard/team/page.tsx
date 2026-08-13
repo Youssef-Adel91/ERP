@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { useAppStore } from "@/store/use-app-store";
 import { UsersRound, Plus, Loader2, AlertCircle, X } from "lucide-react";
 
@@ -130,7 +130,7 @@ function InviteMemberModal({ onClose, onCreated }: { onClose: () => void; onCrea
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إضافة العضو.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة العضو."));
     } finally {
       setSubmitting(false);
     }

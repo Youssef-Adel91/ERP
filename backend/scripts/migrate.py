@@ -33,7 +33,15 @@ async def main():
     logger.info("Fetching registered tenant schemas...")
     try:
         async with engine.connect() as conn:
-            result = await conn.execute(text("SELECT schema_name FROM public.tenants WHERE status = 'active'"))
+            # NOTE: the Postgres enum `tenantstatus` stores the Python enum
+            # MEMBER NAME (uppercase, e.g. 'ACTIVE'), not TenantStatus.ACTIVE's
+            # .value ('active') — that's how SQLAlchemy's generic sa.Enum
+            # serializes StrEnum columns by default. Using the lowercase
+            # value here silently failed with "invalid input value for enum
+            # tenantstatus" and made this query never find any real tenant,
+            # falling through to the tenant_dummy_test fallback below on
+            # every run.
+            result = await conn.execute(text("SELECT schema_name FROM public.tenants WHERE status = 'ACTIVE'"))
             tenant_schemas = [row[0] for row in result.fetchall()]
     except Exception as e:
         logger.warning(f"Could not fetch tenants (maybe table doesn't exist yet): {e}")

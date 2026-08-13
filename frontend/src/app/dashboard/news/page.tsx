@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { useAppStore } from "@/store/use-app-store";
 import { Megaphone, Plus, Loader2, AlertCircle, X } from "lucide-react";
 
@@ -110,7 +110,7 @@ function CreateAnnouncementModal({ onClose, onCreated }: { onClose: () => void; 
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر نشر الإعلان.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر نشر الإعلان."));
     } finally {
       setSubmitting(false);
     }

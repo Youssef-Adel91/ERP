@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import {
   BookOpenText,
   ScrollText,
@@ -116,7 +116,7 @@ export default function AccountingPage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail as string || "تعذر ترحيل القيد.");
+      setError(pickDetail(axiosErr, "تعذر ترحيل القيد."));
     } finally {
       setPostingId(null);
     }
@@ -298,7 +298,7 @@ function CreateAccountModal({ onClose, onCreated }: { onClose: () => void; onCre
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء الحساب.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء الحساب."));
     } finally {
       setSubmitting(false);
     }

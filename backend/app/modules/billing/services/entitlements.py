@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.database import redis_client
+from app.core.db.database import _get_redis_client
 from app.modules.billing.models.core import Plan, Subscription, SubscriptionState
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,8 @@ async def get_tenant_entitlements(session: AsyncSession, tenant_id: UUID) -> dic
     cache_key = f"entitlements:{tenant_id}"
     
     # 1. Check Redis
-    cached_data = await redis_client.get(cache_key)
+    rc = await _get_redis_client()
+    cached_data = await rc.get(cache_key)
     if cached_data:
         return json.loads(cached_data)
 
@@ -46,7 +47,8 @@ async def get_tenant_entitlements(session: AsyncSession, tenant_id: UUID) -> dic
         entitlements = {}
 
     # 3. Cache in Redis
-    await redis_client.setex(cache_key, ENTITLEMENT_CACHE_TTL, json.dumps(entitlements))
+    rc = await _get_redis_client()
+    await rc.setex(cache_key, ENTITLEMENT_CACHE_TTL, json.dumps(entitlements))
     
     return entitlements
 
@@ -64,5 +66,6 @@ async def invalidate_entitlements(tenant_id: UUID) -> None:
     Clears the Redis cache for a tenant. Called on plan upgrade/downgrade or suspension.
     """
     cache_key = f"entitlements:{tenant_id}"
-    await redis_client.delete(cache_key)
+    rc = await _get_redis_client()
+    await rc.delete(cache_key)
     logger.info(f"Invalidated entitlement cache for tenant {tenant_id}")

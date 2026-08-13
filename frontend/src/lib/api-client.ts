@@ -150,6 +150,52 @@ export function getApiErrorMessage(error: unknown, fallback = "حدث خطأ غ�
   // 4xx other than the above: prefer the server's own detail message if
   // present (these are usually intentional, user-facing validation errors),
   // otherwise fall back to the caller-provided message.
-  const detail = (error.response.data as { detail?: string } | undefined)?.detail;
-  return typeof detail === "string" && detail.length > 0 ? detail : fallback;
+  return extractDetailString(error.response.data) ?? fallback;
+}
+
+/**
+ * extractDetailString — safely turns a FastAPI error body's `detail` field
+ * into a displayable string, whatever shape it happens to be.
+ *
+ * `detail` is a string for `HTTPException(detail="...")` (the common case
+ * every page was written against), but FastAPI's *own* validation layer
+ * (Pydantic, on a 422) returns `detail` as an ARRAY of objects instead:
+ * `[{type, loc, msg, input, ctx}, ...]`. Every page in this app that did
+ * `err.response?.data?.detail || "fallback"` and rendered the result
+ * directly as `{errorMsg}` was one malformed request away from crashing
+ * with "Objects are not valid as a React child" — reproduced live via
+ * `/register` (a too-short/invalid password trips backend validation
+ * before the frontend's zod check ever gets a chance to catch it).
+ */
+function extractDetailString(data: unknown): string | undefined {
+  const detail = (data as { detail?: unknown } | undefined)?.detail;
+
+  if (typeof detail === "string" && detail.length > 0) {
+    return detail;
+  }
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    const messages = detail
+      .map((item) => (item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : null))
+      .filter((msg): msg is string => !!msg);
+    if (messages.length > 0) {
+      return messages.join("، ");
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * pickDetail — drop-in replacement for the unsafe
+ * `err.response?.data?.detail || "fallback"` pattern used throughout the
+ * dashboard's mutation `onError` handlers. Accepts the raw error (not
+ * `.response.data.detail` — the whole error object), same as
+ * `getApiErrorMessage`, but does NOT override with generic 401/403/500
+ * copy — callers using this pattern want the server's specific validation
+ * message when there is one, falling back to their own copy otherwise.
+ */
+export function pickDetail(error: unknown, fallback: string): string {
+  if (!axios.isAxiosError(error)) return fallback;
+  return extractDetailString(error.response?.data) ?? fallback;
 }

@@ -49,4 +49,23 @@ async def get_booking_financials(
         case_data=case.data,
         meta=meta,
     )
-    return financials
+    # NOTE: the internal CaseFinancials model (financials.py) uses
+    # total_buy_price/total_sell_price/total_margin/commission_amount —
+    # those exact names are relied on by the GL posting listener
+    # (listeners.py), so we don't rename them there. But the frontend's
+    # financial summary card (dashboard/cases/[id]/page.tsx TravelFinancials)
+    # expects the shorter buy_price/sell_price/margin/commission keys. The
+    # mismatch meant every field silently came back `undefined` and the
+    # card rendered nothing but dashes — not an empty-data issue, a pure
+    # field-name contract mismatch between this endpoint and the frontend.
+    return {
+        "buy_price": financials.total_buy_price,
+        "sell_price": financials.total_sell_price,
+        "margin": financials.total_margin,
+        "margin_pct": financials.margin_pct,
+        "commission": financials.commission_amount,
+        "currency": financials.currency,
+        "service_lines": financials.service_lines,
+        "passenger_count": financials.passenger_count,
+        "passenger_manifest": financials.passenger_manifest,
+    }

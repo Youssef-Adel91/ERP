@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   BedDouble,
   Plus,
@@ -220,7 +220,7 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إضافة الغرفة. تأكد من تفعيل موديول الضيافة أولاً.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة الغرفة. تأكد من تفعيل موديول الضيافة أولاً."));
     } finally {
       setSubmitting(false);
     }
@@ -488,7 +488,7 @@ function NewReservationModal({
         return;
       }
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء الحجز.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء الحجز."));
     },
   });
 
@@ -658,7 +658,7 @@ function FolioModal({ caseId, onClose }: { caseId: string; onClose: () => void }
               {addCharge.isError && (
                 <div className="flex items-center gap-2 bg-error-container text-on-error-container p-2.5 rounded-lg text-body-sm font-medium border border-error">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  {(addCharge.error as AxiosError<{ detail?: string }>)?.response?.data?.detail || "تعذر إضافة الرسم."}
+                  {pickDetail(addCharge.error, "تعذر إضافة الرسم.")}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">

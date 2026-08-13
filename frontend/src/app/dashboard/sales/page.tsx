@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import { ReceiptText, Plus, Trash2, Loader2, AlertCircle, X, CheckCircle2, Landmark, Truck, ExternalLink } from "lucide-react";
 
 /**
@@ -147,7 +147,7 @@ export default function SalesPage() {
     mutationFn: async (id: string) => { await apiClient.post(`/sales/invoices/${id}/post`); },
     onMutate: (id) => { setActionError(""); setPostingId(id); },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sales-invoices"] }),
-    onError: (err: AxiosError<{ detail?: string }>) => setActionError(err.response?.data?.detail || "تعذر ترحيل الفاتورة."),
+    onError: (err: AxiosError<{ detail?: string }>) => setActionError(pickDetail(err, "تعذر ترحيل الفاتورة.")),
     onSettled: () => setPostingId(null),
   });
 
@@ -181,7 +181,7 @@ export default function SalesPage() {
       setEtaResults((prev) => ({ ...prev, [invoiceId]: doc }));
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setEtaError(err.response?.data?.detail || "تعذر إرسال الفاتورة لمنظومة الفاتورة الإلكترونية.");
+      setEtaError(pickDetail(err, "تعذر إرسال الفاتورة لمنظومة الفاتورة الإلكترونية."));
     },
     onSettled: () => setEtaSubmittingId(null),
   });
@@ -379,7 +379,7 @@ function ShipInvoiceModal({
       });
     },
     onSuccess: onShipped,
-    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(err.response?.data?.detail || "تعذر إنشاء الشحنة."),
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر إنشاء الشحنة.")),
   });
 
   return (
@@ -472,7 +472,7 @@ function CreateInvoiceModal({
       });
     },
     onSuccess: onCreated,
-    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(err.response?.data?.detail || "تعذر إنشاء الفاتورة."),
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر إنشاء الفاتورة.")),
   });
 
   return (

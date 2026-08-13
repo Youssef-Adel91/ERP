@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Receipt,
   Settings2,
@@ -167,7 +167,7 @@ function ConfigCard() {
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
       setSuccessMsg("");
-      setErrorMsg(err.response?.data?.detail || "تعذر حفظ الإعدادات.");
+      setErrorMsg(pickDetail(err, "تعذر حفظ الإعدادات."));
     },
   });
 

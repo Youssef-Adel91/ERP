@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 import sqlmodel
 
 
@@ -145,14 +146,25 @@ def upgrade() -> None:
     )
 
     # ── 2. Expand: Add Universal Lifecycle Columns as Nullable First ──────────
-    # Create the documentstate enum type in the tenant schema first
-    op.execute(
-        "CREATE TYPE tenant.documentstate AS ENUM ("
-        "'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', "
-        "'REJECTED', 'CANCELLED', 'WITHDRAWN', 'REVERSED', 'CLOSED'"
-        ")"
-    )
-    doc_state_enum = sa.Enum(
+    # Create the documentstate enum type in the tenant schema first.
+    # Wrapped in DO/EXCEPTION so a retried migration run (e.g. after a later
+    # revision in this same chain fails and the whole `upgrade head` is
+    # re-run against a schema that already committed this step) doesn't
+    # blow up on "type already exists" — same class of bug fixed in
+    # c7d8e9f0a1b2_add_cheques_table.py, hardened here defensively even
+    # though this exact statement isn't the one currently failing.
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE tenant.documentstate AS ENUM (
+                'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'POSTED',
+                'REJECTED', 'CANCELLED', 'WITHDRAWN', 'REVERSED', 'CLOSED'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    # IMPORTANT: postgresql.ENUM, not generic sa.Enum — see the comment on
+    # cheque_type_enum in c7d8e9f0a1b2_add_cheques_table.py for why.
+    doc_state_enum = postgresql.ENUM(
         "DRAFT", "PENDING_APPROVAL", "APPROVED", "POSTED", "REJECTED",
         "CANCELLED", "WITHDRAWN", "REVERSED", "CLOSED",
         name="documentstate",

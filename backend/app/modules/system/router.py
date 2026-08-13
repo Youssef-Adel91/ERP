@@ -39,7 +39,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.system.dependencies import CurrentUser
-from app.modules.system.models import Tenant, User, UserRole
+from app.modules.system.models import Tenant, TenantStatus, User, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,7 +118,23 @@ async def register(
     db: AsyncSession = Depends(get_public_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> RegisterResponse:
-    """Register a new tenant — provisions schema in background and returns JWT tokens."""
+    """
+    Register a new tenant. Provisioning is now AWAITED synchronously before
+    the response is returned — see the module docstring / provision_tenant_schema()
+    in app/core/db/database.py for why the previous background-task version
+    was a real, live bug: it always told the client registration succeeded
+    (status=PENDING_SETUP never even got flipped to ACTIVE — that field was
+    never touched here, a separate bug now also fixed below) before the
+    schema had actually finished being created, so brand-new tenants —
+    including ones that picked a vertical plugin like rental/hospitality
+    during onboarding — would see only the always-present Core system and
+    fail to load real data, because their schema was silently incomplete or
+    still mid-creation. Registration now takes a few seconds longer (real
+    schema + Chart of Accounts creation) in exchange for actually being
+    correct: if provisioning fails, the whole request fails (and the
+    Tenant/User rows are rolled back by get_public_db()'s exception handler)
+    instead of quietly leaving a broken half-provisioned tenant behind.
+    """
     from app.core.config import settings
     from app.core.db.database import provision_tenant_schema
     from app.modules.system.models import ProvisioningState
@@ -149,6 +165,7 @@ async def register(
         slug=slug,
         schema_name=schema,
         provisioning_state=ProvisioningState.CREATED,
+        status=TenantStatus.PENDING_SETUP,
     )
     db.add(tenant)
     await db.flush()
@@ -163,16 +180,19 @@ async def register(
     db.add(user)
     await db.flush()
 
-    # ── 4. Provision tenant schema (Background Task) ──────────────────────────
-    # We offload provisioning to a background task because SQLModel's run_sync
-    # (which uses greenlet) can crash the Windows Proactor event loop if run 
-    # directly inside an active HTTP request context.
-    background_tasks.add_task(provision_tenant_schema, str(tenant_id))
-    
-    # We optimistically set it to COMPLETE (or leave it CREATED for the UI to poll).
-    # Since we are returning the JWT immediately, the UI expects it to be ready,
-    # and the background task will finish in ~1 second.
+    # ── 4. Provision tenant schema — AWAITED, not a background task ──────────
+    # provision_tenant_schema() runs the real alembic tenant migration chain
+    # (creates every tenant table incl. all vertical plugin tables, and
+    # stamps alembic_version) plus the Chart of Accounts seed, in a
+    # subprocess (still required to dodge the Windows ProactorEventLoop +
+    # greenlet crash), but now properly awaited — see its docstring. If it
+    # raises, we deliberately do NOT catch it here: letting it propagate is
+    # what makes the whole registration fail and roll back cleanly instead
+    # of leaving a broken tenant that looks ACTIVE.
+    await provision_tenant_schema(str(tenant_id))
+
     tenant.provisioning_state = ProvisioningState.COMPLETE
+    tenant.status = TenantStatus.ACTIVE
 
     await db.commit()
 
@@ -246,7 +266,7 @@ async def login(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=str(user.tenant_id),
-        role=user.role,
+        roles=[str(user.role)],
     )
     refresh_token = await create_refresh_token(
         user_id=user.id,

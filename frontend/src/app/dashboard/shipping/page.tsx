@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Truck,
   Plus,
@@ -111,7 +111,7 @@ export default function ShippingPage() {
     mutationFn: async (id: string) => { await apiClient.post(`/logistics/shipments/${id}/cancel`); },
     onMutate: (id) => { setActionError(""); setCancellingId(id); },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["shipments"] }),
-    onError: (err: AxiosError<{ detail?: string }>) => setActionError(err.response?.data?.detail || "تعذر إلغاء الشحنة."),
+    onError: (err: AxiosError<{ detail?: string }>) => setActionError(pickDetail(err, "تعذر إلغاء الشحنة.")),
     onSettled: () => setCancellingId(null),
   });
 
@@ -264,7 +264,7 @@ function AddCarrierModal({ onClose, onCreated }: { onClose: () => void; onCreate
       await apiClient.post("/logistics/carriers", { ...data, is_active: true });
     },
     onSuccess: onCreated,
-    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(err.response?.data?.detail || "تعذر إضافة شركة الشحن."),
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر إضافة شركة الشحن.")),
   });
 
   return (

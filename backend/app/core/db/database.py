@@ -25,6 +25,7 @@ Schema Provisioning (provision_tenant_schema):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -88,16 +89,149 @@ AsyncSessionLocal = async_sessionmaker(
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 
-redis_client: aioredis.Redis = aioredis.from_url(
+
+class _FakePipeline:
+    """Minimal pipeline stub for _FakeRedis."""
+
+    def __init__(self, store: "_FakeRedis") -> None:
+        self._store = store
+        self._cmds: list = []
+
+    def incr(self, key: str) -> "_FakePipeline":
+        self._cmds.append(("incr", key))
+        return self
+
+    def expire(self, key: str, seconds: int) -> "_FakePipeline":
+        self._cmds.append(("expire", key, seconds))
+        return self
+
+    async def execute(self) -> list:
+        import time
+        results = []
+        for cmd in self._cmds:
+            if cmd[0] == "incr":
+                key = cmd[1]
+                entry = self._store._store.get(key)
+                if entry:
+                    # entry[0] is bytes (e.g. b"1"); decode before int()
+                    val = int(entry[0].decode("utf-8") if isinstance(entry[0], bytes) else entry[0]) + 1
+                else:
+                    val = 1
+                self._store._store[key] = (str(val).encode(), None)
+                results.append(val)
+            elif cmd[0] == "expire":
+                key = cmd[1]
+                secs = cmd[2]
+                if key in self._store._store:
+                    v, _ = self._store._store[key]
+                    self._store._store[key] = (v, time.monotonic() + secs)
+                results.append(1)
+        return results
+
+    async def __aenter__(self) -> "_FakePipeline":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+class _FakeRedis:
+    """
+    Minimal in-memory Redis stub used when a real Redis server is unreachable
+    (e.g. local dev without Docker).  Implements all methods called by the
+    security, throttling, billing, and health-check code.
+    """
+
+    def __init__(self) -> None:
+        import time
+        self._store: dict[str, tuple[bytes, float | None]] = {}
+        self._time = time
+
+    # ── Basic commands ────────────────────────────────────────────────────────
+
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        pass
+
+    async def setex(self, name: str, time_seconds: int, value: str | bytes) -> None:
+        expire_at = self._time.monotonic() + time_seconds
+        if isinstance(value, str):
+            value = value.encode()
+        self._store[name] = (value, expire_at)
+
+    async def get(self, name: str) -> bytes | None:
+        entry = self._store.get(name)
+        if entry is None:
+            return None
+        value, expire_at = entry
+        if expire_at is not None and self._time.monotonic() > expire_at:
+            del self._store[name]
+            return None
+        return value
+
+    async def delete(self, *names: str) -> int:
+        deleted = 0
+        for name in names:
+            if name in self._store:
+                del self._store[name]
+                deleted += 1
+        return deleted
+
+    async def scan_iter(self, match: str = "*"):
+        import fnmatch
+        for key in list(self._store.keys()):
+            if fnmatch.fnmatch(key, match):
+                yield key
+
+    def pipeline(self, transaction: bool = True) -> _FakePipeline:
+        return _FakePipeline(self)
+
+
+# ── Lazy Redis initialisation ─────────────────────────────────────────────────
+
+# Eagerly create the client object (does NOT open a TCP connection yet).
+# If Redis is unavailable the first actual async operation will raise; we catch
+# that in _get_redis_client() and fall back to _FakeRedis.
+# The module-level `redis_client` name is kept for backwards-compatibility with
+# legacy direct imports in main.py / throttling.py / entitlements.py.
+_fake_redis_singleton: _FakeRedis = _FakeRedis()
+redis_client: aioredis.Redis | _FakeRedis = aioredis.from_url(
     settings.REDIS_URL,
     encoding="utf-8",
     decode_responses=False,
+    socket_connect_timeout=2,
 )
 
+_redis_ready: bool = False  # True once we've verified the real Redis is up
 
-async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
-    """FastAPI dependency — yields the shared Redis client."""
-    yield redis_client
+
+async def _get_redis_client() -> aioredis.Redis | _FakeRedis:
+    """Lazy-verify Redis connection once; fall back to _FakeRedis on failure."""
+    global redis_client, _redis_ready
+    if _redis_ready:
+        return redis_client
+
+    try:
+        await redis_client.ping()  # type: ignore[union-attr]
+        _redis_ready = True
+        logger.info("✅ Redis connected: %s", settings.REDIS_URL)
+    except Exception as exc:
+        logger.warning(
+            "⚠️  Redis unavailable (%s). Using in-memory token store — "
+            "refresh tokens will not survive restarts. Start Redis for production.",
+            exc,
+        )
+        redis_client = _fake_redis_singleton
+        _redis_ready = True
+    return redis_client
+
+
+async def get_redis() -> AsyncGenerator[aioredis.Redis | _FakeRedis, None]:  # type: ignore[override]
+    """FastAPI dependency — yields the Redis client (or in-memory fallback)."""
+    yield await _get_redis_client()
+
 
 
 # ── Session Context Managers ──────────────────────────────────────────────────
@@ -127,13 +261,31 @@ async def tenant_session(tenant_id: UUID | str) -> AsyncGenerator[AsyncSession, 
     """
     Yields an async session with schema_translate_map applied.
     All models with {"schema": "tenant"} will be routed to the tenant's schema.
+
+    IMPORTANT — bound at the ENGINE level, not the Connection level:
+    Several route handlers in this codebase call `await session.commit()`
+    mid-request (e.g. "commit, then reload the row via session.get() to
+    return a fresh representation" — see app/plugins/travel/api_packages.py's
+    create_package). Committing ends that transaction and releases the
+    Session's underlying Connection back to the pool; the *next* query
+    issued on the same Session then checks out a brand-new Connection.
+    Previously, schema_translate_map was applied via
+    `session.connection(execution_options=...)`, which only decorates the
+    ONE Connection object checked out at that moment — it does NOT survive
+    being swapped out after a mid-request commit. That silently reverted
+    subsequent queries to the literal, non-existent "tenant" schema instead
+    of "tenant_<uuid>", e.g. raising
+    `asyncpg.exceptions.UndefinedTableError: relation "tenant.travel_itinerary_days"
+    does not exist` even though the row and table both exist correctly under
+    the real tenant schema.
+    Binding the option on `engine.execution_options(...)` instead (an
+    inexpensive proxy over the same connection pool, not a new pool) makes
+    every Connection checked out for this Session — no matter how many times
+    mid-request commits swap it out — carry the schema_translate_map.
     """
     schema = schema_for(tenant_id)
-    async with AsyncSessionLocal() as session:
-        # Apply translation map at the connection level for this session
-        await session.connection(
-            execution_options={"schema_translate_map": {"tenant": schema}},
-        )
+    translated_engine = engine.execution_options(schema_translate_map={"tenant": schema})
+    async with AsyncSession(bind=translated_engine, expire_on_commit=False, autoflush=False) as session:
         token = current_session.set(session)
         try:
             yield session
@@ -224,6 +376,10 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     from app.plugins.recruitment.models.job_orders import JobOrder, JobOrderCase
     from app.plugins.hospitality.models.folio import FolioItem
     from app.plugins.rental.models.inspection import VehicleInspection
+    from app.plugins.travel.models.package import (
+        TravelItineraryDay, TravelPackage, TravelPackageComponent,
+    )
+    from app.plugins.travel.models.visa import VisaApplication
     from app.modules.finance.models.cheques import Cheque
     from app.modules.news.models import Announcement
     from app.modules.imports.models.core import ImportDossier, ImportExpense
@@ -300,6 +456,11 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         FolioItem.__table__,
         # Rental Plugin
         VehicleInspection.__table__,
+        # Travel Plugin — package catalog + visa tracking
+        TravelPackage.__table__,
+        TravelItineraryDay.__table__,       # FK → travel_packages
+        TravelPackageComponent.__table__,   # FK → travel_packages, case_vendors
+        VisaApplication.__table__,          # FK → cases, case_vendors
         # Finance — Cheques (depends on contacts; invoice_id/transaction_id are
         # unconstrained UUID columns, no FK, so no extra ordering requirement)
         Cheque.__table__,
@@ -437,43 +598,83 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
 
 async def provision_tenant_schema(tenant_id: str) -> str:
     """
-    Wrapper to run the actual provisioning logic in a separate process to avoid
-    Windows ProactorEventLoop + greenlet crashes inside ASGI processes.
-    We use a standard threading.Thread and subprocess to fully decouple it.
-    """
-    import sys
-    import threading
-    import subprocess
-    
-    def _run_worker():
-        script = f"""
-import asyncio
-import logging
-logging.basicConfig(level=logging.INFO)
-from app.core.db.database import _provision_tenant_schema_internal
-asyncio.run(_provision_tenant_schema_internal('{tenant_id}'))
-"""
-        try:
-            # Fully detach the subprocess so it does not tear down Uvicorn's console handles when it exits
-            creationflags = 0
-            if sys.platform == "win32":
-                creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            
-            subprocess.Popen(
-                [sys.executable, "-c", script], 
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                creationflags=creationflags
-            )
-            logger.info("✅ Background provisioning process launched detached.")
-        except Exception as exc:
-            logger.error("❌ Background provisioning process failed: %s", exc)
+    Runs the actual provisioning logic (_provision_tenant_schema_internal —
+    real alembic tenant migrations + COA seed) in a separate subprocess, to
+    avoid Windows ProactorEventLoop + greenlet crashes inside the ASGI
+    process. UNLIKE the previous version of this function, the subprocess is
+    properly AWAITED via asyncio.create_subprocess_exec (not fire-and-forget
+    via a detached thread + subprocess.Popen with DEVNULL'd output).
 
-    thread = threading.Thread(target=_run_worker, daemon=True)
-    thread.start()
-    
-    return f"tenant_{tenant_id.replace('-', '_')}"
+    Why this matters — this was a real, live bug: the old detached/
+    fire-and-forget version returned a schema-name string immediately,
+    before (or regardless of whether) the subprocess had done anything. Its
+    caller, register_tenant(), had no way to know if provisioning actually
+    succeeded — it always proceeded to mark the tenant ACTIVE and commit.
+    Any provisioning failure (including on a flaky/slow machine, or a
+    subprocess that simply never got scheduled) was completely invisible —
+    stdout/stderr went to DEVNULL — leaving an ACTIVE tenant with an empty
+    or partially-created schema. That is the root cause behind the repeated
+    "relation X does not exist" 500s chased throughout this project: new
+    tenants (including ones that picked a vertical plugin like rental/
+    hospitality during onboarding) would show only the always-present Core
+    system and fail to load real data, because their schema was silently
+    incomplete from the moment they registered.
+
+    Now: on failure, this raises RuntimeError with the subprocess's stderr.
+    Callers MUST NOT swallow it — letting registration fail loudly (and
+    roll back the whole transaction, per public_session()'s except/rollback)
+    is what stops a tenant from ending up ACTIVE with a broken schema.
+    Windows fix: asyncio.create_subprocess_exec raises NotImplementedError
+    on Windows when the running event loop is SelectorEventLoop (the default
+    for Uvicorn on Windows). We use subprocess.run() inside a
+    ThreadPoolExecutor instead — it is blocking but safe in a thread, and
+    asyncio.run_in_executor lets us await it without blocking the event loop.
+    """
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+
+    schema = _schema_name(tenant_id)
+    # backend/ — the directory containing alembic.ini / the app package.
+    # Must run with this as cwd so relative imports and alembic.ini paths
+    # resolve, matching the convention in
+    # app/core/tenancy/migrations.py's _BACKEND_ROOT.
+    backend_root = Path(__file__).resolve().parents[3]
+
+    script = (
+        "import asyncio, logging\n"
+        "logging.basicConfig(level=logging.INFO)\n"
+        "from app.core.db.database import _provision_tenant_schema_internal\n"
+        f"asyncio.run(_provision_tenant_schema_internal('{tenant_id}'))\n"
+    )
+
+    def _run_subprocess() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            cwd=backend_root,
+        )
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        result: subprocess.CompletedProcess = await loop.run_in_executor(
+            executor, _run_subprocess
+        )
+
+    if result.returncode != 0:
+        stderr_text = result.stderr.decode(errors="replace")
+        logger.error(
+            "❌ Tenant schema provisioning FAILED for tenant_id=%s (schema=%s):\n%s",
+            tenant_id, schema, stderr_text,
+        )
+        raise RuntimeError(
+            f"Failed to provision schema for tenant '{tenant_id}' ('{schema}'): "
+            f"{stderr_text[-2000:]}"
+        )
+
+    logger.info("✅ Tenant schema '%s' provisioned successfully.", schema)
+    return schema
 
 if __name__ == "__main__":
     import asyncio
@@ -527,11 +728,15 @@ _BYPASS_PATHS = {
     # entry the route is unreachable, same as the previously-fixed
     # WhatsApp/Paymob/carrier webhooks.
     "/notifications/documents",
+    # Auth endpoints that should NOT require authentication
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/auth/refresh",
+    "/api/v1/system/auth/login",
+    "/api/v1/system/auth/refresh",
+    "/api/v1/system/tenants/register",
 }
 _BYPASS_PREFIXES = (
-    "/api/v1/system/auth/",
-    "/api/v1/system/tenants/register",
-    "/api/v1/auth/",            # The /api/v1/auth/register shortcut
     "/api/v1/portal/",          # Client Portal endpoints (self-managed auth)
     # Carrier (Bosta/Mylerz) status webhooks — same category as the
     # WhatsApp bypass above: carriers call one fixed URL per carrier code

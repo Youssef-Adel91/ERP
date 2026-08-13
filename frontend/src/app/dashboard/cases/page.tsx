@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { Workflow, Plus, Loader2, AlertCircle, X, Plane, BedDouble, Car, UserSearch, ArrowLeftRight } from "lucide-react";
 
 interface Stage { id: string; label: string; label_ar?: string; order: number; is_terminal?: boolean; }
@@ -81,7 +81,7 @@ export default function CasesPage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError((axiosErr.response?.data?.detail as string) || "تعذر تفعيل الموديول.");
+      setError(pickDetail(axiosErr, "تعذر تفعيل الموديول."));
     } finally {
       setActivating(null);
     }
@@ -94,7 +94,7 @@ export default function CasesPage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError((axiosErr.response?.data?.detail as string) || "تعذر نقل الحالة للمرحلة الجديدة.");
+      setError(pickDetail(axiosErr, "تعذر نقل الحالة للمرحلة الجديدة."));
     } finally {
       setTransitioning(null);
     }
@@ -216,7 +216,7 @@ function CreateCaseModal({ caseTypes, onClose, onCreated }: { caseTypes: CaseTyp
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر فتح الحالة.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر فتح الحالة."));
     } finally {
       setSubmitting(false);
     }

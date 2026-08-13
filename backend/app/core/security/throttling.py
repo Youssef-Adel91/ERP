@@ -11,7 +11,8 @@ from fastapi import Request, Response
 from redis.exceptions import RedisError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from app.core.db.database import redis_client
+from app.core.config import settings
+from app.core.db.database import _get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         # Default limits
         self.default_max_requests = max_requests
         self.default_window = window_seconds
-        
+
         # Route-specific strict limits: (prefix, max_requests, window_seconds,
         # fail_closed). fail_closed=True means: if Redis is unreachable, DENY
         # the request instead of letting it through. This matters for
@@ -30,8 +31,19 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         # has a blip is exactly the window an attacker would want. Everything
         # else stays fail-open, since we'd rather keep the API serving
         # ordinary traffic than take a full outage over a Redis hiccup.
+        #
+        # The /auth limit is intentionally much looser outside production:
+        # 5 requests/60s (production, real brute-force protection) is easy
+        # to trip during ordinary local development/QA — a developer or a
+        # browser-automation test doing a handful of register+login attempts
+        # in quick succession hits it immediately and gets locked out for up
+        # to a minute with a confusing 429. Same rationale already used for
+        # the X-Tenant-ID middleware bypass (see app/core/db/database.py):
+        # the stricter behavior only matters once this is reachable by real
+        # attackers, i.e. in production.
+        auth_max_requests = 5 if settings.is_production else 100
         self.strict_limits = [
-            ("/api/v1/auth", 5, 60, True),
+            ("/api/v1/auth", auth_max_requests, 60, True),
             ("/api/v1/trust", 10, 60, True),
             ("/api/v1/webhooks/carriers", 30, 60, False),
             ("/api/v1/invoices/public", 30, 60, False),
@@ -65,7 +77,8 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         try:
             # Increment the counter for this window
             # Use pipeline to ensure atomic execution and set TTL
-            async with redis_client.pipeline(transaction=True) as pipe:
+            rc = await _get_redis_client()
+            async with rc.pipeline(transaction=True) as pipe:
                 pipe.incr(redis_key)
                 pipe.expire(redis_key, window_seconds)
                 result, _ = await pipe.execute()

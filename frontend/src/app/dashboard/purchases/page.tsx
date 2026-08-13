@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import { ShoppingCart, Plus, Trash2, Loader2, AlertCircle, X, CheckCircle2, GitMerge } from "lucide-react";
 
 /**
@@ -84,7 +84,7 @@ export default function PurchasesPage() {
     mutationFn: async (id: string) => { await apiClient.post(`/purchasing/bills/${id}/match`); },
     onMutate: (id) => { setActionError(""); setBusyId(id); },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["purchasing-bills"] }),
-    onError: (err: AxiosError<{ detail?: string }>) => setActionError(err.response?.data?.detail || "تعذرت المطابقة الثلاثية."),
+    onError: (err: AxiosError<{ detail?: string }>) => setActionError(pickDetail(err, "تعذرت المطابقة الثلاثية.")),
     onSettled: () => setBusyId(null),
   });
 
@@ -92,7 +92,7 @@ export default function PurchasesPage() {
     mutationFn: async (id: string) => { await apiClient.post(`/purchasing/bills/${id}/post`); },
     onMutate: (id) => { setActionError(""); setBusyId(id); },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["purchasing-bills"] }),
-    onError: (err: AxiosError<{ detail?: string }>) => setActionError(err.response?.data?.detail || "تعذر ترحيل الفاتورة (تأكد من إجراء المطابقة أولاً)."),
+    onError: (err: AxiosError<{ detail?: string }>) => setActionError(pickDetail(err, "تعذر ترحيل الفاتورة (تأكد من إجراء المطابقة أولاً).")),
     onSettled: () => setBusyId(null),
   });
 
@@ -209,7 +209,7 @@ function CreateBillModal({ suppliers, onClose, onCreated }: { suppliers: Contact
       });
     },
     onSuccess: onCreated,
-    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(err.response?.data?.detail || "تعذر إنشاء فاتورة المورد."),
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر إنشاء فاتورة المورد.")),
   });
 
   return (

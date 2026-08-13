@@ -41,6 +41,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_public_db
+from app.core.db.database import tenant_session
+from app.core.dependencies.plugin_gate import DEMO_OPERATION_LIMIT
 from app.modules.system.dependencies import CurrentUser, require_roles
 from app.modules.system.models import Tenant
 
@@ -57,30 +59,35 @@ PLUGIN_CATALOGUE = [
         "name_ar": "الفنادق والضيافة",
         "description_ar": "إدارة الغرف والحجوزات والفواتير الفندقية (Folio).",
         "depends_on": [],
+        "video_url": None,
     },
     {
         "key": "rental",
         "name_ar": "تأجير المركبات",
         "description_ar": "إدارة أسطول التأجير، الفحص، والحجز.",
         "depends_on": [],
+        "video_url": None,
     },
     {
         "key": "travel",
         "name_ar": "السياحة والسفر",
         "description_ar": "إدارة باقات السفر وحجوزات العملاء.",
         "depends_on": [],
+        "video_url": None,
     },
     {
         "key": "recruitment",
         "name_ar": "التوظيف والاستقدام",
         "description_ar": "إدارة طلبات التوظيف والمرشحين.",
         "depends_on": [],
+        "video_url": None,
     },
     {
         "key": "whatsapp",
         "name_ar": "تكامل واتساب",
         "description_ar": "إشعارات الطلبات والفواتير عبر واتساب.",
         "depends_on": [],
+        "video_url": None,
     },
 ]
 PLUGIN_KEYS = {p["key"] for p in PLUGIN_CATALOGUE}
@@ -107,7 +114,11 @@ class PluginOut(BaseModel):
     name_ar: str
     description_ar: str
     is_active: bool
+    is_demo: bool = False  # tenant is trying this plugin free, via onboarding
+    video_url: str | None = None
     package_key: str | None = None  # which package (if any) this plugin belongs to
+    demo_operations_used: int = 0
+    demo_operation_limit: int = DEMO_OPERATION_LIMIT
 
 
 class PluginToggleIn(BaseModel):
@@ -139,6 +150,42 @@ def _dependents_blocking_disable(plugin_key: str, active: set[str]) -> list[str]
     ]
 
 
+async def _run_plugin_bootstrap(plugin_key: str, tenant_id) -> None:
+    """
+    Idempotently injects the plugin's CaseType into the Case Engine right
+    when it's activated from the marketplace.
+
+    WHY THIS EXISTS: before this, activating a plugin here only flipped
+    `Tenant.active_plugins` (a public-schema flag) — it never called the
+    plugin's own `/​<key>/bootstrap` endpoint (e.g.
+    app.plugins.travel.bootstrap.bootstrap_travel_case_type), which is what
+    actually inserts the CaseType row the plugin's pages query for. The
+    result: every plugin page showed "غير مفعّل بعد" (not activated) right
+    after a real activation, until someone manually hit the bootstrap
+    endpoint — confirmed live while testing the Travel vertical. Each
+    bootstrap_*_case_type() function is idempotent (checks for an existing
+    CaseType by `code` first), so calling it here on every activation is
+    safe even if it's already been bootstrapped before.
+    Plugins with no CaseType-based data model (e.g. whatsapp) simply have
+    no entry in this registry and are silently skipped.
+    """
+    bootstrap_fn = None
+    if plugin_key == "travel":
+        from app.plugins.travel.bootstrap import bootstrap_travel_case_type as bootstrap_fn
+    elif plugin_key == "rental":
+        from app.plugins.rental.bootstrap import bootstrap_rental_case_type as bootstrap_fn
+    elif plugin_key == "hospitality":
+        from app.plugins.hospitality.bootstrap import bootstrap_hospitality_case_type as bootstrap_fn
+    elif plugin_key == "recruitment":
+        from app.plugins.recruitment.bootstrap import bootstrap_recruitment_case_type as bootstrap_fn
+
+    if bootstrap_fn is None:
+        return
+
+    async with tenant_session(tenant_id) as tsession:
+        await bootstrap_fn(tsession)
+
+
 # ── Individual plugins ─────────────────────────────────────────────────────────
 
 
@@ -149,16 +196,66 @@ async def list_plugins(
 ):
     tenant = await session.get(Tenant, current_user.tenant_id)
     active = set(tenant.active_plugins if tenant else [])
+    demo = set(tenant.demo_plugins if tenant else [])
+    usage = tenant.demo_usage if tenant else {}
     return [
         PluginOut(
             key=p["key"],
             name_ar=p["name_ar"],
             description_ar=p["description_ar"],
             is_active=p["key"] in active,
+            is_demo=p["key"] in demo and p["key"] not in active,
+            video_url=p.get("video_url"),
             package_key=_package_for_plugin(p["key"]),
+            demo_operations_used=(usage or {}).get(p["key"], 0),
         )
         for p in PLUGIN_CATALOGUE
     ]
+
+
+@router.post("/{plugin_key}/demo", response_model=PluginOut)
+async def try_plugin_demo(
+    plugin_key: str,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_public_db),
+):
+    """
+    Free onboarding trial — grants router access to the plugin (see
+    require_plugin() in app/core/dependencies/plugin_gate.py) without
+    touching `active_plugins` (billing/marketplace state stays untouched).
+    Reads are unlimited; mutating requests (create/update/delete) are capped
+    at DEMO_OPERATION_LIMIT and tracked in `Tenant.demo_usage`. Idempotent.
+    Any authenticated tenant member can start a demo for their own tenant —
+    no OWNER/ADMIN restriction, unlike the real paid toggle, since nothing
+    is being purchased.
+    """
+    catalogue_entry = next((p for p in PLUGIN_CATALOGUE if p["key"] == plugin_key), None)
+    if not catalogue_entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown plugin '{plugin_key}'.")
+
+    tenant = await session.get(Tenant, current_user.tenant_id)
+    demo = list(tenant.demo_plugins or [])
+    newly_activated = plugin_key not in demo
+    if newly_activated:
+        demo.append(plugin_key)
+        tenant.demo_plugins = demo
+        session.add(tenant)
+        await session.commit()
+
+    if newly_activated:
+        await _run_plugin_bootstrap(plugin_key, current_user.tenant_id)
+
+    active = set(tenant.active_plugins or [])
+    return PluginOut(
+        key=catalogue_entry["key"],
+        name_ar=catalogue_entry["name_ar"],
+        description_ar=catalogue_entry["description_ar"],
+        is_active=plugin_key in active,
+        is_demo=plugin_key not in active,
+        video_url=catalogue_entry.get("video_url"),
+        package_key=_package_for_plugin(plugin_key),
+        demo_operations_used=(tenant.demo_usage or {}).get(plugin_key, 0),
+    )
 
 
 @router.put(
@@ -187,6 +284,8 @@ async def toggle_plugin(
                 detail=f"لا يمكن إلغاء تفعيل '{plugin_key}' لأن الإضافات التالية تعتمد عليها: {', '.join(blockers)}.",
             )
 
+    newly_activated = data.is_active and plugin_key not in active
+
     if data.is_active and plugin_key not in active:
         active.append(plugin_key)
     elif not data.is_active and plugin_key in active:
@@ -195,6 +294,9 @@ async def toggle_plugin(
     tenant.active_plugins = active
     session.add(tenant)
     await session.commit()
+
+    if newly_activated:
+        await _run_plugin_bootstrap(plugin_key, current_user.tenant_id)
 
     return PluginOut(
         key=catalogue_entry["key"],
@@ -248,6 +350,7 @@ async def install_package(
 
     tenant = await session.get(Tenant, current_user.tenant_id)
     active = list(tenant.active_plugins or [])
+    newly_activated = [k for k in pkg["plugin_keys"] if k not in active]
     for plugin_key in pkg["plugin_keys"]:
         if plugin_key not in active:
             active.append(plugin_key)
@@ -255,6 +358,9 @@ async def install_package(
     tenant.active_plugins = active
     session.add(tenant)
     await session.commit()
+
+    for plugin_key in newly_activated:
+        await _run_plugin_bootstrap(plugin_key, current_user.tenant_id)
 
     return PackageOut(
         key=pkg["key"], name_ar=pkg["name_ar"], description_ar=pkg["description_ar"],

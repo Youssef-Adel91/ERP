@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   ShoppingCart,
   Loader2,
@@ -143,7 +143,7 @@ export default function PosPage() {
       queryClient.invalidateQueries({ queryKey: ["pos-current-shift"] });
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setCheckoutError(err.response?.data?.detail || "تعذر إتمام عملية البيع.");
+      setCheckoutError(pickDetail(err, "تعذر إتمام عملية البيع."));
     },
   });
 
@@ -353,7 +353,7 @@ function CloseShiftModal({
       onClose();
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setError(err.response?.data?.detail || "تعذر إغلاق الوردية.");
+      setError(pickDetail(err, "تعذر إغلاق الوردية."));
     },
   });
 
@@ -414,7 +414,7 @@ function OpenShiftPanel({ onOpened }: { onOpened: () => void }) {
     },
     onSuccess: () => onOpened(),
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setError(err.response?.data?.detail || "تعذر فتح الوردية.");
+      setError(pickDetail(err, "تعذر فتح الوردية."));
     },
   });
 

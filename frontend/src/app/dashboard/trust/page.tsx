@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -104,7 +104,7 @@ function LookupCard() {
       } else if (err.response?.status === 422) {
         setErrorMsg(err.response.data?.detail || "صيغة رقم الهاتف غير صحيحة.");
       } else {
-        setErrorMsg(err.response?.data?.detail || "تعذر الاستعلام عن شبكة الثقة.");
+        setErrorMsg(pickDetail(err, "تعذر الاستعلام عن شبكة الثقة."));
       }
     },
   });
@@ -194,7 +194,7 @@ function ContributionCard() {
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
       setSuccessMsg("");
-      setErrorMsg(err.response?.data?.detail || "تعذر تسجيل المساهمة.");
+      setErrorMsg(pickDetail(err, "تعذر تسجيل المساهمة."));
     },
   });
 

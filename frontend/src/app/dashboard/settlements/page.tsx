@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { AxiosError } from "axios";
 import { Truck, Loader2, AlertCircle, Search } from "lucide-react";
 
@@ -70,7 +70,7 @@ export default function SettlementsPage() {
       // made the whole settlements table render as if it had failed to
       // load, even though it hadn't.
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setAgingError((axiosErr.response?.data?.detail as string) || "تعذر جلب تقرير الأعمار لهذه الشركة.");
+      setAgingError(pickDetail(axiosErr, "تعذر جلب تقرير الأعمار لهذه الشركة."));
     } finally {
       setAgingLoading(false);
     }

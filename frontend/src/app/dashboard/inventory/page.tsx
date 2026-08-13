@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import { Package, Warehouse as WarehouseIcon, Plus, Loader2, AlertCircle, X } from "lucide-react";
 
 /**
@@ -194,7 +194,7 @@ function CreateItemModal({ onClose, onCreated }: { onClose: () => void; onCreate
     },
     onSuccess: onCreated,
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setErrorMsg(err.response?.data?.detail || "تعذر إنشاء الصنف.");
+      setErrorMsg(pickDetail(err, "تعذر إنشاء الصنف."));
     },
   });
 
@@ -323,7 +323,7 @@ function CreateWarehouseModal({ onClose, onCreated }: { onClose: () => void; onC
     },
     onSuccess: onCreated,
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setErrorMsg(err.response?.data?.detail || "تعذر إنشاء المخزن.");
+      setErrorMsg(pickDetail(err, "تعذر إنشاء المخزن."));
     },
   });
 

@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
 import { useAppStore } from "@/store/use-app-store";
-import { apiClient, saveSession } from "@/lib/api-client";
+import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 
@@ -80,7 +80,7 @@ export default function LoginPage() {
       if (axiosErr.response?.status === 401) {
         setErrorMsg("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
       } else {
-        setErrorMsg(axiosErr.response?.data?.detail || axiosErr.message || "تعذر تسجيل الدخول، حاول مرة أخرى.");
+        setErrorMsg(pickDetail(axiosErr, axiosErr.message || "تعذر تسجيل الدخول، حاول مرة أخرى."));
       }
     } finally {
       setIsLoading(false);

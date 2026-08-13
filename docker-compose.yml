@@ -8,13 +8,42 @@ version: "3.9"
 #   docker compose logs -f db     # Stream DB logs
 # ══════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════
+# IMPORTANT — READ BEFORE RUNNING `docker compose up`:
+# This project no longer runs its backend or database through Docker.
+# The `api` service that used to live here has been REMOVED because it
+# was silently causing "old version keeps coming back" bugs:
+#   1. It bound port 8000 — the SAME port the real workflow uses for a
+#      manually-run `uvicorn app.main:app --reload --port 8000`. If this
+#      container was ever started, it would grab port 8000 and keep
+#      answering every request with STALE data, because...
+#   2. ...it hardcoded DATABASE_URL to a local Postgres container
+#      (`db`, empty/local), completely different from the real Neon
+#      cloud database configured in `backend/.env` — so any time this
+#      container answered instead of the real process, you'd see old/
+#      missing data with no obvious explanation.
+#   3. `restart: unless-stopped` meant Docker Desktop would silently
+#      resurrect this container on every reboot/Docker restart, even if
+#      you never ran `docker compose up` yourself that session — which
+#      is almost certainly why it kept reappearing intermittently and
+#      also why it could collide with any OTHER unrelated project on
+#      your machine that also happens to use port 8000.
+#
+# If you ever want to containerize the backend again, rebuild the `api`
+# service from scratch pointing DATABASE_URL at the same Neon pooled
+# connection string as backend/.env — do NOT reintroduce a separate
+# local `db` container for it, since Neon is now the only real database.
+# ══════════════════════════════════════════════════════════════════
+
 services:
 
-  # ── PostgreSQL 16 ──────────────────────────────────────────────
+  # ── PostgreSQL 16 (currently unused — kept only if you want a local
+  #    DB again someday; the app now uses Neon exclusively via
+  #    backend/.env, not this container) ────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: omni_erp_db
-    restart: unless-stopped
+    restart: "no"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -33,11 +62,15 @@ services:
       retries: 10
       start_period: 10s
 
-  # ── Redis 7 ────────────────────────────────────────────────────
+  # ── Redis 7 — still genuinely used (rate limiter reads REDIS_URL
+  #    from backend/.env, default redis://localhost:6381/0, which maps
+  #    to this container's exposed port). restart changed from
+  #    "unless-stopped" to "no" so it only runs when you explicitly
+  #    start it, not silently on every Docker Desktop boot. ──────────
   redis:
     image: redis:7-alpine
     container_name: omni_erp_redis
-    restart: unless-stopped
+    restart: "no"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6381:6379"
@@ -48,29 +81,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-  # ── FastAPI Backend ─────────────────────────────────────────────
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-    container_name: omni_erp_api
-    restart: unless-stopped
-    env_file: ./backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/omni_erp
-      REDIS_URL: redis://redis:6379/0
-      EVENT_BUS_BACKEND: memory
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 # ── Persistent Volumes ──────────────────────────────────────────
 volumes:

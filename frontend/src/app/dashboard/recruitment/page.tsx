@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   UserSearch,
   Plus,
@@ -242,7 +242,7 @@ function CreateJobOrderModal({ onClose }: { onClose: () => void }) {
         {mutation.isError && (
           <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            {(mutation.error as AxiosError<{ detail?: string }>)?.response?.data?.detail || "تعذر إنشاء طلب التوظيف."}
+            {pickDetail(mutation.error, "تعذر إنشاء طلب التوظيف.")}
           </div>
         )}
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
@@ -320,7 +320,7 @@ function MatchingPanel({ jobOrder, onClose }: { jobOrder: JobOrder; onClose: () 
       queryClient.invalidateQueries({ queryKey: ["recruitment-job-orders"] });
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setError(err.response?.data?.detail || "تعذر إرفاق المرشح.");
+      setError(pickDetail(err, "تعذر إرفاق المرشح."));
     },
   });
 
@@ -411,7 +411,7 @@ function BulkImportModal({ jobOrders, onClose }: { jobOrders: JobOrder[]; onClos
       queryClient.invalidateQueries({ queryKey: ["recruitment-job-orders"] });
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setError(err.response?.data?.detail || "تعذر استيراد الملف.");
+      setError(pickDetail(err, "تعذر استيراد الملف."));
     },
   });
 

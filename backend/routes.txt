@@ -1,0 +1,6 @@
+/api/v1/openapi.json {'HEAD', 'GET'}
+/docs {'HEAD', 'GET'}
+/docs/oauth2-redirect {'HEAD', 'GET'}
+/redoc {'HEAD', 'GET'}
+/metrics {'GET'}
+/health {'GET'}

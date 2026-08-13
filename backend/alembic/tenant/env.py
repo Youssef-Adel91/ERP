@@ -40,6 +40,12 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.sales.models  # noqa: F401
 import app.plugins.inventory.models  # noqa: F401
 import app.modules.eta.models  # noqa: F401
+import app.modules.cases.models.core  # noqa: F401
+import app.modules.cases.models.vendor  # noqa: F401
+import app.modules.hr.models.core  # noqa: F401
+import app.modules.pos.models  # noqa: F401
+import app.modules.purchasing.models  # noqa: F401
+import app.plugins.travel.models  # noqa: F401
 from app.core.config import settings
 from app.core.db.base import TenantBase
 
@@ -87,7 +93,7 @@ def do_run_migrations(connection, schema_name: str) -> None:
         # Only include tables inside this exact schema and ignore alembic_version
         include_object=lambda obj, name, type_, reflected, compare_to: (
             False if name == "alembic_version" else (
-                obj.schema == "tenant" if type_ == "table" else True
+                (obj.schema == "tenant" or obj.schema == schema_name) if type_ == "table" else True
             )
         ),
     )

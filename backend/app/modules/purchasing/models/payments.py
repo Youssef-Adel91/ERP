@@ -13,11 +13,11 @@ from typing import Optional
 from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy import Column, Date, Numeric
+from sqlalchemy import Column, Date, Numeric, String
 from sqlmodel import Field, Relationship
 
 from app.core.db.base import TenantBase
-from app.core.models.mixins import DocumentLifecycleMixin
+from app.core.models.mixins import DocumentLifecycleMixin, DocumentState
 from app.modules.purchasing.models.billing import VendorBill
 
 

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Building2,
   Plus,
@@ -276,7 +276,7 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
         {mutation.isError && (
           <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            {(mutation.error as AxiosError<{ detail?: string }>)?.response?.data?.detail || "تعذر إنشاء المورد."}
+            {pickDetail(mutation.error, "تعذر إنشاء المورد.")}
           </div>
         )}
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
@@ -382,7 +382,7 @@ function CreateRateCardModal({ vendor, onClose }: { vendor: Vendor; onClose: () 
         {mutation.isError && (
           <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            {(mutation.error as AxiosError<{ detail?: string }>)?.response?.data?.detail || "تعذر إضافة السعر."}
+            {pickDetail(mutation.error, "تعذر إضافة السعر.")}
           </div>
         )}
 

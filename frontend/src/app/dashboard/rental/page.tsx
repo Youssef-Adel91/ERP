@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Car,
   Plus,
@@ -213,7 +213,7 @@ function CreateVehicleModal({ onClose, onCreated }: { onClose: () => void; onCre
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إضافة المركبة. تأكد من تفعيل موديول التأجير أولاً.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة المركبة. تأكد من تفعيل موديول التأجير أولاً."));
     } finally {
       setSubmitting(false);
     }
@@ -480,7 +480,7 @@ function NewRentalModal({
         return;
       }
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء عملية التأجير.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء عملية التأجير."));
     },
   });
 
@@ -615,7 +615,7 @@ function InspectionModal({
     },
     onError: (err) => {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر حفظ الفحص.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر حفظ الفحص."));
     },
   });
 

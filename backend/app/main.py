@@ -71,7 +71,7 @@ import app.plugins.travel.listeners
 import app.plugins.hospitality.listeners
 import app.plugins.rental.listeners
 from app.core.config import settings
-from app.core.db.database import TenantMiddleware, engine, redis_client
+from app.core.db.database import TenantMiddleware, engine, _get_redis_client
 from app.core.observability.logging import setup_logging
 from app.core.observability.middleware import ObservabilityMiddleware
 from app.core.security.middleware import PayloadSizeLimitMiddleware, SecurityHeadersMiddleware
@@ -104,8 +104,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("✅ Database connection ready. (Migrations should be run via Alembic)")
 
     # ── Step 3: Redis health check ────────────────────────────────────────────
+    rc = await _get_redis_client()  # resolves real Redis or FakeRedis
     try:
-        await redis_client.ping()
+        await rc.ping()
         logger.info("✅ Redis connection verified")
     except Exception as exc:
         logger.warning("⚠️  Redis unavailable (refresh tokens disabled): %s", exc)
@@ -121,7 +122,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     # ── Shutdown ──────────────────────────────────────────────────────────────
     logger.info("Shutting down Omni ERP...")
     await engine.dispose()
-    await redis_client.aclose()
+    rc = await _get_redis_client()
+    await rc.aclose()
     logger.info("Connections closed. Goodbye.")
 
 
@@ -474,6 +476,40 @@ def create_application() -> FastAPI:
         dependencies=[require_plugin("travel")],
     )
 
+    # 19b. Travel Plugin — Package Catalog + Itinerary
+    from app.plugins.travel.api_packages import (
+        components_router as travel_components_router,
+        itinerary_router as travel_itinerary_router,
+        router as travel_packages_router,
+    )
+    _app.include_router(
+        travel_packages_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Travel Plugin — Packages"],
+        dependencies=[require_plugin("travel")],
+    )
+    _app.include_router(
+        travel_components_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Travel Plugin — Packages"],
+        dependencies=[require_plugin("travel")],
+    )
+    _app.include_router(
+        travel_itinerary_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Travel Plugin — Packages"],
+        dependencies=[require_plugin("travel")],
+    )
+
+    # 19c. Travel Plugin — Visa Tracking
+    from app.plugins.travel.api_visas import router as travel_visas_router
+    _app.include_router(
+        travel_visas_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Travel Plugin — Visas"],
+        dependencies=[require_plugin("travel")],
+    )
+
     # 20. Hospitality Plugin — Rooms
     from app.plugins.hospitality.api.rooms import router as hospitality_rooms_router
     _app.include_router(
@@ -606,7 +642,8 @@ def create_application() -> FastAPI:
             logger.warning("Health check: PostgreSQL unreachable: %s", exc)
 
         try:
-            await redis_client.ping()
+            _rc = await _get_redis_client()
+            await _rc.ping()
             redis_ok = True
         except Exception as exc:
             logger.warning("Health check: Redis unreachable: %s", exc)

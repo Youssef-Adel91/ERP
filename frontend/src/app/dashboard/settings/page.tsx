@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Settings2,
   User as UserIcon,
@@ -197,7 +197,7 @@ function WhatsAppConfigCard() {
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
       setSuccessMsg("");
-      setErrorMsg(err.response?.data?.detail || "تعذر حفظ الإعدادات.");
+      setErrorMsg(pickDetail(err, "تعذر حفظ الإعدادات."));
     },
   });
 

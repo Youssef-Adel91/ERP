@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   CreditCard,
   Loader2,
@@ -202,7 +202,7 @@ function PlansCard() {
       if (err.response?.status === 403) {
         setErrorMsg("هذا الإجراء متاح فقط لمالك الحساب أو المدير.");
       } else {
-        setErrorMsg(err.response?.data?.detail || "تعذر تحديث الاشتراك.");
+        setErrorMsg(pickDetail(err, "تعذر تحديث الاشتراك."));
       }
     },
   });

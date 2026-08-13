@@ -40,6 +40,7 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <body
+        suppressHydrationWarning
         className={`${plexArabic.variable} ${jetbrainsMono.variable} ${manrope.variable} ${inter.variable} font-sans bg-surface text-on-surface min-h-screen antialiased`}
       >
         <QueryProvider>{children}</QueryProvider>

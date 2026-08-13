@@ -14,11 +14,11 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy import Column, Date, DateTime, Numeric, func
+from sqlalchemy import Column, Date, DateTime, Numeric, String, func
 from sqlmodel import Field, Relationship
 
 from app.core.db.base import TenantBase
-from app.core.models.mixins import DocumentLifecycleMixin
+from app.core.models.mixins import DocumentLifecycleMixin, DocumentState
 
 
 class VendorBillMatchState(StrEnum):
@@ -61,13 +61,23 @@ class VendorBill(DocumentLifecycleMixin, TenantBase, table=True):
     )
     branch_id: UUID | None = Field(default=None, index=True)
 
+    # NOTE: these override DocumentLifecycleMixin's/plain sa.Enum declarations with
+    # explicit String columns. The actual migration (f6a1b2c3d4e5) created
+    # match_state/status/state as plain VARCHAR, not native Postgres enum types.
+    # A bare sa.Enum(...) here (no name=/schema=/create_type=False) makes SQLAlchemy
+    # look up a native enum type OID via asyncpg that was never created, causing
+    # "type ... does not exist" 500s. Match the deployed column types instead.
     match_state: VendorBillMatchState = Field(
         default=VendorBillMatchState.UNMATCHED,
-        sa_column=Column(sa.Enum(VendorBillMatchState), nullable=False),
+        sa_column=Column(String(30), nullable=False),
     )
     status: VendorBillStatus = Field(
         default=VendorBillStatus.DRAFT,
-        sa_column=Column(sa.Enum(VendorBillStatus), nullable=False),
+        sa_column=Column(String(30), nullable=False),
+    )
+    state: DocumentState = Field(
+        default=DocumentState.DRAFT,
+        sa_column=Column(String(30), nullable=False),
     )
     subtotal: Decimal = Field(
         default=Decimal("0.0000"),

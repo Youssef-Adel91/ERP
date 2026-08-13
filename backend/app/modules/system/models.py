@@ -81,6 +81,18 @@ class Tenant(PublicBase, table=True):
     timezone: str = Field(default="Africa/Cairo", max_length=50)
     status: TenantStatus = Field(default=TenantStatus.PENDING_SETUP)
     active_plugins: list[str] = Field(default_factory=list, sa_column=Column(JSON, default=list, nullable=False))
+    # Free, unlimited-read-access trial for a plugin picked during onboarding
+    # (see app/core/dependencies/plugin_gate.py — require_plugin() treats
+    # demo_plugins the same as active_plugins for GATE purposes; write/mutation
+    # endpoints inside the plugin routers still work normally in demo mode for
+    # now — this is a soft "look around" trial, not a hard feature-limited one).
+    demo_plugins: list[str] = Field(default_factory=list, sa_column=Column(JSON, default=list, nullable=False))
+    # Per-plugin count of mutating (create/update/delete) requests made while
+    # a plugin is in demo mode — {"hospitality": 3, "travel": 10, ...}.
+    # Enforced in app/core/dependencies/plugin_gate.py against DEMO_OPERATION_LIMIT.
+    # Cleared implicitly once a plugin moves from demo_plugins to active_plugins
+    # (no cap applies to fully-activated plugins).
+    demo_usage: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON, default=dict, nullable=False))
 
     # Relationships
     users: list["User"] = Relationship(back_populates="tenant")

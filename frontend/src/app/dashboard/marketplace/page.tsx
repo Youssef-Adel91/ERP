@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Store,
   Loader2,
@@ -25,6 +25,8 @@ interface PluginEntry {
   name_ar: string;
   description_ar: string;
   is_active: boolean;
+  is_demo?: boolean;
+  video_url?: string | null;
   package_key: string | null;
 }
 
@@ -85,7 +87,7 @@ function PackagesSection() {
       queryClient.invalidateQueries({ queryKey: ["marketplace-plugins"] });
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setErrorMsg(err.response?.data?.detail || "تعذر تنفيذ العملية على الباقة.");
+      setErrorMsg(pickDetail(err, "تعذر تنفيذ العملية على الباقة."));
     },
   });
 
@@ -218,7 +220,7 @@ function IndividualPluginsSection() {
       if (context?.previous) {
         queryClient.setQueryData(["marketplace-plugins"], context.previous);
       }
-      setErrorMsg(err.response?.data?.detail || "تعذر تحديث الإضافة.");
+      setErrorMsg(pickDetail(err, "تعذر تحديث الإضافة."));
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["marketplace-plugins"] });

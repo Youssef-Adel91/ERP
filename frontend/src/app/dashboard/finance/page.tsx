@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import {
   Landmark,
   Plus,
@@ -105,7 +105,7 @@ export default function FinancePage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError((axiosErr.response?.data?.detail as string) || "تعذر تنفيذ العملية.");
+      setError(pickDetail(axiosErr, "تعذر تنفيذ العملية."));
     } finally {
       setActingId(null);
     }
@@ -242,7 +242,7 @@ function CreateChequeModal({
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء الشيك.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء الشيك."));
     } finally {
       setSubmitting(false);
     }

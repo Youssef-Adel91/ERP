@@ -13,7 +13,7 @@ import {
   type UseFormSetValue,
 } from "react-hook-form";
 import { AxiosError } from "axios";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   ArrowRight,
   Loader2,
@@ -190,7 +190,7 @@ export default function CaseDetailPage() {
       window.URL.revokeObjectURL(url);
     },
     onError: (err: AxiosError<{ detail?: string }>) => {
-      setItineraryError(err.response?.data?.detail || "تعذر تحميل البرنامج السياحي.");
+      setItineraryError(pickDetail(err, "تعذر تحميل البرنامج السياحي."));
     },
   });
 
@@ -255,7 +255,7 @@ export default function CaseDetailPage() {
     onError: (err: AxiosError<{ detail?: string }> | Error) => {
       setSuccess("");
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || err.message || "تعذر نقل الحالة.");
+      setError(pickDetail(axiosErr, err.message || "تعذر نقل الحالة."));
     },
   });
 

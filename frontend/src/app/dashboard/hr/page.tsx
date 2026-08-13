@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { Users, Wallet, Plus, Loader2, AlertCircle, X, CheckCircle2 } from "lucide-react";
 
 type EmployeeStatus = "ACTIVE" | "ON_LEAVE" | "TERMINATED";
@@ -106,7 +106,7 @@ export default function HRPage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError((axiosErr.response?.data?.detail as string) || "تعذر اعتماد القسيمة.");
+      setError(pickDetail(axiosErr, "تعذر اعتماد القسيمة."));
     } finally {
       setApprovingId(null);
     }
@@ -232,7 +232,7 @@ function CreateEmployeeModal({ onClose, onCreated }: { onClose: () => void; onCr
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إضافة الموظف.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة الموظف."));
     } finally {
       setSubmitting(false);
     }
@@ -281,7 +281,7 @@ function CreatePayslipModal({ employees, onClose, onCreated }: { employees: Empl
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء قسيمة الراتب.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء قسيمة الراتب."));
     } finally {
       setSubmitting(false);
     }

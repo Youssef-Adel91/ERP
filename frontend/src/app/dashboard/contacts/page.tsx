@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import {
   Search,
   Plus,
@@ -252,7 +252,7 @@ function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCre
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء جهة الاتصال.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء جهة الاتصال."));
     } finally {
       setSubmitting(false);
     }

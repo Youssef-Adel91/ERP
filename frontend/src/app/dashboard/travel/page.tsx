@@ -12,6 +12,8 @@ import {
   TrendingUp,
   Wallet,
   ArrowUpRight,
+  Package,
+  Stamp,
 } from "lucide-react";
 import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
 
@@ -138,12 +140,26 @@ export default function TravelPage() {
           <h1 className="font-headline-lg text-headline-lg text-on-surface mb-1">السياحة والسفر</h1>
           <p className="font-body-md text-body-md text-on-surface-variant">الرحلات القادمة والهامش الربحي لكل حجز.</p>
         </div>
-        <Link
-          href="/dashboard/cases"
-          className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary text-on-primary font-bold text-body-sm hover:opacity-90 transition-opacity w-fit"
-        >
-          حجز جديد <ArrowUpRight className="w-4 h-4" />
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/dashboard/travel/packages"
+            className="flex items-center gap-2 h-10 px-4 rounded-lg border border-outline-variant text-on-surface font-bold text-body-sm hover:bg-surface-container transition-colors w-fit"
+          >
+            <Package className="w-4 h-4" /> باقات السياحة
+          </Link>
+          <Link
+            href="/dashboard/travel/visas"
+            className="flex items-center gap-2 h-10 px-4 rounded-lg border border-outline-variant text-on-surface font-bold text-body-sm hover:bg-surface-container transition-colors w-fit"
+          >
+            <Stamp className="w-4 h-4" /> متابعة التأشيرات
+          </Link>
+          <Link
+            href="/dashboard/travel/new"
+            className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary text-on-primary font-bold text-body-sm hover:opacity-90 transition-opacity w-fit"
+          >
+            حجز جديد <ArrowUpRight className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-gutter">

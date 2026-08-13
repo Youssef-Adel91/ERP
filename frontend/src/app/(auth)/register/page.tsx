@@ -8,7 +8,7 @@ import * as z from "zod";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/use-app-store";
-import { apiClient, saveSession } from "@/lib/api-client";
+import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
 import { AxiosError } from "axios";
 
 const registerSchema = z.object({
@@ -85,12 +85,10 @@ export default function RegisterPage() {
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=00288E&color=fff`,
       });
 
-      router.push("/dashboard");
+      router.push("/onboarding/systems");
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(
-        axiosErr.response?.data?.detail || axiosErr.message || "حدث خطأ أثناء إنشاء الحساب.",
-      );
+      setErrorMsg(pickDetail(axiosErr, axiosErr.message || "حدث خطأ أثناء إنشاء الحساب."));
     } finally {
       setIsLoading(false);
     }

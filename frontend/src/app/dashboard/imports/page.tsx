@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { apiClient, getApiErrorMessage, pickDetail } from "@/lib/api-client";
 import { Ship, Plus, Loader2, AlertCircle, X, Lock } from "lucide-react";
 
 type ImportStatus = "OPEN" | "CUSTOMS" | "CLEARED" | "CLOSED";
@@ -74,7 +74,7 @@ export default function ImportsPage() {
       await fetchAll();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError((axiosErr.response?.data?.detail as string) || "تعذر إغلاق الملف — تحقق من وجود مصروفات مسجلة عليه.");
+      setError(pickDetail(axiosErr, "تعذر إغلاق الملف — تحقق من وجود مصروفات مسجلة عليه."));
     } finally {
       setClosingId(null);
     }
@@ -151,7 +151,7 @@ function CreateDossierModal({ suppliers, onClose, onCreated }: { suppliers: Cont
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(axiosErr.response?.data?.detail || "تعذر إنشاء ملف الاستيراد.");
+      setErrorMsg(pickDetail(axiosErr, "تعذر إنشاء ملف الاستيراد."));
     } finally {
       setSubmitting(false);
     }
