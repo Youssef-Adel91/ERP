@@ -10,12 +10,41 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from app.core.models.mixins import DocumentState
-from app.modules.purchasing.exceptions import InvalidPOStateError, PurchaseOrderNotFoundError
+from app.modules.approvals.services.approval_engine import find_matching_rules, submit_for_approval
+from app.modules.contacts.models import Contact, ContactType
+from app.modules.purchasing.exceptions import (
+    InvalidPOStateError,
+    PurchaseOrderNotFoundError,
+    SupplierNotFoundError,
+)
 from app.modules.purchasing.models.core import (
     PurchaseOrder,
     PurchaseOrderLine,
     PurchaseOrderStatus,
 )
+
+
+def _po_approvable_content(po: PurchaseOrder) -> dict:
+    """Same approvable-content shape used at PO creation (see create_purchase_order),
+    rebuilt from a loaded PurchaseOrder + its lines so the content hash stays
+    stable across create -> submit-for-approval as long as nothing changed."""
+    return {
+        "po_number": po.po_number,
+        "supplier_id": str(po.supplier_id),
+        "warehouse_id": str(po.warehouse_id),
+        "currency": po.currency,
+        "fx_rate": str(po.fx_rate),
+        "total_amount": str(po.total_amount),
+        "lines": [
+            {
+                "item_id": str(line.item_id),
+                "variant_id": str(line.variant_id) if line.variant_id else None,
+                "qty_ordered": str(line.qty_ordered),
+                "unit_price": str(line.unit_price),
+            }
+            for line in po.lines
+        ],
+    }
 
 
 async def create_purchase_order(
@@ -45,6 +74,19 @@ async def create_purchase_order(
         branch_id = UUID(branch_id)
     if isinstance(fx_rate, str):
         fx_rate = Decimal(fx_rate)
+
+    # Validated lookup: `supplier_id` has no DB-level foreign key to
+    # tenant.contacts.id (see PurchaseOrder.supplier_id), so confirm it
+    # actually resolves to a SUPPLIER-type contact before the PO is
+    # created — otherwise a PO can silently point at a nonexistent or
+    # customer-only contact with no error until someone tries to bill it.
+    supplier_stmt = select(Contact).where(
+        Contact.id == supplier_id,
+        Contact.contact_type == ContactType.SUPPLIER,
+    )
+    supplier = (await session.execute(supplier_stmt)).scalar_one_or_none()
+    if supplier is None:
+        raise SupplierNotFoundError(supplier_id)
 
     if not po_number:
         po_number = f"PO-{uuid4().hex[:8].upper()}"
@@ -139,9 +181,23 @@ async def create_purchase_order(
 async def confirm_purchase_order(
     session: AsyncSession,
     po_id: UUID | str,
+    requested_by: UUID,
 ) -> PurchaseOrder:
     """
     Transitions a PurchaseOrder from DRAFT or APPROVED state to CONFIRMED.
+
+    Approval gate (Wave 2): if an active `ApprovalRule` for document_type
+    "purchase_order" matches this PO's fields (e.g. total_amount over a
+    threshold), confirming a DRAFT PO instead routes it through the
+    Approval Engine — the PO is submitted for approval (state ->
+    PENDING_APPROVAL) and this call returns without confirming; a second
+    call to `confirm_purchase_order` after the request is approved (state ->
+    APPROVED, via POST /approvals/requests/{id}/decide) actually confirms it.
+
+    Tenants with **no matching active rules** (the default — no tenant has
+    any ApprovalRule configured yet) see zero behavior change: DRAFT goes
+    straight to APPROVED then CONFIRMED in this same call, exactly as
+    before this gate was added.
     """
     if isinstance(po_id, str):
         po_id = UUID(po_id)
@@ -160,10 +216,32 @@ async def confirm_purchase_order(
     if po.status not in (PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.CONFIRMED):
         raise InvalidPOStateError(po.id, str(po.status), "confirm")
 
-    po.status = PurchaseOrderStatus.CONFIRMED
     if po.state == DocumentState.DRAFT:
+        matching_rules = await find_matching_rules(
+            session,
+            document_type="purchase_order",
+            fields={"total_amount": po.total_amount},
+        )
+        if matching_rules:
+            rule = matching_rules[0]
+            await submit_for_approval(
+                session=session,
+                document_type="purchase_order",
+                document_id=po.id,
+                document=po,
+                requested_by=requested_by,
+                approvable_content=_po_approvable_content(po),
+                rule_id=rule.id,
+                rule_version=rule.version,
+            )
+            await session.flush()
+            await session.refresh(po)
+            return po
         po.state = DocumentState.APPROVED
+    elif po.state in (DocumentState.PENDING_APPROVAL, DocumentState.REJECTED):
+        raise InvalidPOStateError(po.id, po.state.value, "confirm")
 
+    po.status = PurchaseOrderStatus.CONFIRMED
     session.add(po)
     await session.flush()
     await session.refresh(po)

@@ -161,6 +161,26 @@ class _FakeRedis:
             value = value.encode()
         self._store[name] = (value, expire_at)
 
+    async def set(
+        self,
+        name: str,
+        value: str | bytes,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> bool | None:
+        """Mirrors redis-py's SET ... [EX seconds] [NX] subset used by
+        idempotency-key locking (see app/modules/pos/api.py::checkout).
+        Returns True if the key was set, None if NX was requested and the
+        key already holds a live (non-expired) value — same as real Redis.
+        """
+        if nx and await self.get(name) is not None:
+            return None
+        if isinstance(value, str):
+            value = value.encode()
+        expire_at = self._time.monotonic() + ex if ex is not None else None
+        self._store[name] = (value, expire_at)
+        return True
+
     async def get(self, name: str) -> bytes | None:
         entry = self._store.get(name)
         if entry is None:
@@ -554,14 +574,36 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     # living documentation of what belongs in the tenant schema, and as a
     # safety net: if it's ever missing a model that IS in a migration (or
     # vice versa), that's a signal the two have drifted and need attention.
+
+    # ── Step 1: Create schema (idempotent) ────────────────────────────────
+    # Must exist before alembic can create its alembic_version table inside it.
     async with engine.begin() as conn:
-        # CREATE SCHEMA (idempotent) — must exist before alembic can create
-        # its own alembic_version table inside it.
         await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
 
-    from app.core.tenancy.migrations import TenantMigrationOrchestrator
-    orchestrator = TenantMigrationOrchestrator()
-    await orchestrator._migrate_tenant(schema)
+    # ── Step 2: Run Alembic tenant migrations ───────────────────────────────
+    # Use synchronous subprocess.run() instead of the async
+    # TenantMigrationOrchestrator._migrate_tenant() which uses
+    # asyncio.create_subprocess_exec(). Since _provision_tenant_schema_internal
+    # already runs inside a dedicated subprocess (via provision_tenant_schema),
+    # a synchronous call avoids the triple-nesting (uvicorn→P1→P2) that causes
+    # pipe handle inheritance hangs on Windows.
+    import subprocess
+    import sys
+    from pathlib import Path
+    _backend_root = Path(__file__).resolve().parents[3]
+
+    migrate_result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema}", "upgrade", "head"],
+        capture_output=True,
+        cwd=_backend_root,
+    )
+    if migrate_result.returncode != 0:
+        stderr_text = migrate_result.stderr.decode(errors="replace")
+        logger.error(
+            "❌ Tenant migration FAILED for schema=%s:\n%s", schema, stderr_text,
+        )
+        raise RuntimeError(f"Tenant migration failed for '{schema}': {stderr_text[-2000:]}")
+    logger.info("✅ Tenant schema '%s' alembic migrations applied.", schema)
 
     # ── Step 3: Seed default Chart of Accounts ────────────────────────────────
     # Each new tenant gets the same baseline chart, ready for event handlers.

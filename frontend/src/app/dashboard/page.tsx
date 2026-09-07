@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "@/store/use-app-store";
 import { apiClient } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
-import { StatusBadge, type BadgeTone } from "@/components/ui/Badge";
+import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   Users,
@@ -23,7 +23,7 @@ import {
   Landmark,
   ArrowDownToLine,
   ArrowUpFromLine,
-  MoreVertical,
+  Info,
 } from "lucide-react";
 
 interface DashboardMetrics {
@@ -31,6 +31,10 @@ interface DashboardMetrics {
   total_receivables: string | number;
   total_payables: string | number;
   cash_balance: string | number;
+  order_count: number;
+  order_count_trend_pct: number | null;
+  new_customers_count: number;
+  new_customers_trend_pct: number | null;
 }
 
 interface TransactionLine {
@@ -110,157 +114,26 @@ function KpiCard({
   );
 }
 
-// ── Revenue SVG Chart ─────────────────────────────────────────────────────────
-function RevenueChart() {
-  const months = ["يناير", "مارس", "مايو", "يوليو", "سبتمبر", "نوفمبر"];
+// ── Demo Data Notice ────────────────────────────────────────────────────────
+// Replaces three previously-fake charts (revenue trend, expense breakdown,
+// branch performance) that rendered invented numbers and fictional branch
+// names not connected to any real tenant data. Per
+// docs/Nexus_ERP_Audit_Report.md §15's own proposed remedy, a chart backed
+// by real aggregation logic (branch revenue, expense-category breakdown)
+// isn't wired up here yet — that requires business logic (branch/cost-center
+// data model) not yet confirmed to exist cleanly for this tenant. Showing an
+// honest placeholder is safer than either shipping fabricated numbers or
+// guessing at unverified aggregation logic.
+function DemoDataNotice({ title }: { title: string }) {
   return (
-    <div className="glass-card rounded-xl p-card-padding shadow-card">
-      <div className="flex justify-between items-center mb-6">
-        <h4 className="font-headline-sm text-headline-sm">ترند الإيرادات السنوية</h4>
-        <select className="bg-surface-container-low border-none rounded text-body-sm px-3 py-1 outline-none cursor-pointer text-on-surface-variant">
-          <option>آخر 12 شهر</option>
-          <option>2024</option>
-          <option>2023</option>
-        </select>
+    <div className="glass-card rounded-xl p-card-padding shadow-card flex flex-col items-center justify-center text-center min-h-[200px] gap-3">
+      <div className="p-2 bg-surface-container rounded-lg">
+        <Info className="w-5 h-5 text-outline" />
       </div>
-      <div className="relative h-64">
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 800 240" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="revGrad" x1="0%" x2="0%" y1="0%" y2="100%">
-              <stop offset="0%" style={{ stopColor: "#00288e", stopOpacity: 0.15 }} />
-              <stop offset="100%" style={{ stopColor: "#00288e", stopOpacity: 0 }} />
-            </linearGradient>
-          </defs>
-          {/* Grid lines */}
-          {[0, 60, 120, 180, 240].map((y) => (
-            <line key={y} x1="0" y1={y} x2="800" y2={y} stroke="#c4c5d5" strokeWidth="0.5" />
-          ))}
-          {/* Area fill */}
-          <path
-            d="M0,200 Q100,160 200,120 T400,80 T600,140 T800,40 L800,240 L0,240 Z"
-            fill="url(#revGrad)"
-          />
-          {/* Line */}
-          <path
-            d="M0,200 Q100,160 200,120 T400,80 T600,140 T800,40"
-            fill="none"
-            stroke="#00288e"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-          {/* Data points */}
-          {[
-            [200, 120],
-            [400, 80],
-            [600, 140],
-            [800, 40],
-          ].map(([cx, cy]) => (
-            <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="5" fill="#00288e" stroke="white" strokeWidth="2" />
-          ))}
-          {/* Y-axis labels */}
-          {["500k", "400k", "300k", "200k", "100k"].map((label, i) => (
-            <text key={label} x="0" y={i * 48 + 12} fill="#757684" fontSize="10" fontFamily="Inter">
-              {label}
-            </text>
-          ))}
-        </svg>
-        {/* X-axis labels */}
-        <div className="absolute bottom-0 w-full flex justify-between text-[10px] text-outline font-medium px-2">
-          {months.map((m) => (
-            <span key={m}>{m}</span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Expense Donut ─────────────────────────────────────────────────────────────
-function ExpenseDonut() {
-  const segments = [
-    { label: "الرواتب", pct: 45, color: "#00288e" },
-    { label: "التشغيل", pct: 25, color: "#440098" },
-    { label: "أخرى", pct: 30, color: "#b8c4ff" },
-  ];
-  return (
-    <div className="glass-card rounded-xl p-card-padding shadow-card flex flex-col">
-      <h4 className="font-headline-sm text-headline-sm mb-6">توزيع المصروفات</h4>
-      <div className="relative w-40 h-40 mx-auto mb-6">
-        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-          {/* Track */}
-          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#e1e3e4" strokeWidth="3.5" />
-          {/* Segments */}
-          {(() => {
-            let offset = 0;
-            return segments.map((seg) => {
-              const dash = (seg.pct / 100) * 100;
-              const el = (
-                <circle
-                  key={seg.label}
-                  cx="18"
-                  cy="18"
-                  r="15.915"
-                  fill="none"
-                  stroke={seg.color}
-                  strokeWidth="3.5"
-                  strokeDasharray={`${dash} ${100 - dash}`}
-                  strokeDashoffset={-offset}
-                  strokeLinecap="round"
-                />
-              );
-              offset += dash;
-              return el;
-            });
-          })()}
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-body-sm text-outline">الإجمالي</span>
-          <span className="font-data-mono font-bold text-headline-sm">1.2M</span>
-        </div>
-      </div>
-      <div className="space-y-3 mt-auto">
-        {segments.map((seg) => (
-          <div key={seg.label} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
-              <span className="text-body-md">{seg.label}</span>
-            </div>
-            <span className="font-data-mono text-body-md font-bold">{seg.pct}%</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Branch Performance ────────────────────────────────────────────────────────
-function BranchPerformance() {
-  const branches = [
-    { name: "فرع القاهرة (الرئيسي)", value: "2.1M ج.م", pct: 85, color: "bg-primary" },
-    { name: "فرع الإسكندرية", value: "1.4M ج.م", pct: 60, color: "bg-primary-container" },
-    { name: "فرع الجيزة", value: "0.75M ج.م", pct: 35, color: "bg-secondary" },
-  ];
-  return (
-    <div className="glass-card rounded-xl p-card-padding shadow-card">
-      <div className="flex justify-between items-center mb-6">
-        <h4 className="font-headline-sm text-headline-sm">أداء الفروع الكبرى</h4>
-        <button className="text-on-surface-variant hover:text-on-surface transition-colors">
-          <MoreVertical className="w-5 h-5" />
-        </button>
-      </div>
-      <div className="space-y-5">
-        {branches.map((b) => (
-          <div key={b.name}>
-            <div className="flex justify-between text-body-sm mb-2">
-              <span className="font-medium">{b.name}</span>
-              <span className="font-data-mono">{b.value}</span>
-            </div>
-            <div className="w-full bg-surface-container rounded-full h-2 overflow-hidden">
-              <div className={`${b.color} h-full rounded-full transition-all`} style={{ width: `${b.pct}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
+      <h4 className="font-headline-sm text-headline-sm">{title}</h4>
+      <p className="text-body-sm text-on-surface-variant max-w-xs">
+        هذا الرسم البياني غير متاح بعد — يحتاج ربطًا ببيانات حقيقية لم تُفعَّل في هذا الإصدار.
+      </p>
     </div>
   );
 }
@@ -301,62 +174,72 @@ export default function DashboardPage() {
   const hasError = metricsError || entriesError;
   const entryList = entries ?? [];
 
-  const handleExport = () => {
-    if (!metrics) return;
-    const rows: string[][] = [
-      ["المقياس", "القيمة (ج.م)"],
-      ["إجمالي الإيرادات", String(metrics.total_revenue)],
-      ["إجمالي المستحقات (ذمم مدينة)", String(metrics.total_receivables)],
-      ["إجمالي الالتزامات (ذمم دائنة)", String(metrics.total_payables)],
-      ["رصيد النقدية", String(metrics.cash_balance)],
-    ];
-    const csv = "\uFEFF" + rows.map((r) => r.map((cell) => `"${(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `dashboard-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!metrics || exporting) return;
+    setExporting(true);
+    try {
+      const response = await apiClient.get("/dashboard/export.xlsx", { responseType: "blob" });
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `dashboard-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (!user) return null;
 
-  // Build KPI cards from API data or use demo data while loading
+  // Build KPI cards from real API data. Two of the four (order count, new
+  // customers) now carry real month-over-month trend badges computed by the
+  // backend; the revenue and cash-balance cards have no trend baseline
+  // computed server-side yet, so their badges stay neutral rather than
+  // showing an invented percentage.
+  const formatTrend = (pct: number | null): { trend: "up" | "down" | "neutral"; trendValue: string } => {
+    if (pct === null || pct === undefined) return { trend: "neutral", trendValue: "لا توجد بيانات مقارنة" };
+    if (pct === 0) return { trend: "neutral", trendValue: "0%" };
+    return { trend: pct > 0 ? "up" : "down", trendValue: `${Math.abs(pct)}%${pct > 0 ? "+" : "-"}` };
+  };
+
   const kpis = metrics
     ? [
         {
           label: "إجمالي الإيرادات",
           value: egp(metrics.total_revenue),
-          trend: "up" as const,
-          trendValue: "12%+",
+          trend: "neutral" as const,
+          trendValue: "لا توجد بيانات مقارنة",
           iconBg: "bg-primary-container/10",
           iconColor: "text-primary",
           icon: <Wallet className="w-5 h-5 text-primary" />,
         },
         {
           label: "عدد الطلبات",
-          value: "1,842",
-          trend: "up" as const,
-          trendValue: "8%+",
+          value: metrics.order_count.toLocaleString("ar-EG"),
+          ...formatTrend(metrics.order_count_trend_pct),
           iconBg: "bg-tertiary-container/10",
           iconColor: "text-tertiary",
           icon: <ShoppingCart className="w-5 h-5 text-tertiary" />,
         },
         {
           label: "العملاء الجدد",
-          value: "312",
-          trend: "down" as const,
-          trendValue: "2%-",
+          value: metrics.new_customers_count.toLocaleString("ar-EG"),
+          ...formatTrend(metrics.new_customers_trend_pct),
           iconBg: "bg-secondary-container/10",
           iconColor: "text-secondary",
           icon: <Users className="w-5 h-5 text-secondary" />,
         },
         {
-          label: "صافي الربح",
+          label: "رصيد النقدية",
           value: egp(metrics.cash_balance),
-          trend: "up" as const,
-          trendValue: "5%+",
+          trend: "neutral" as const,
+          trendValue: "لا توجد بيانات مقارنة",
           iconBg: "bg-error-container/10",
           iconColor: "text-error",
           icon: <Landmark className="w-5 h-5 text-error" />,
@@ -377,10 +260,10 @@ export default function DashboardPage() {
         <div className="flex gap-3">
           <button
             onClick={handleExport}
-            disabled={!metrics}
+            disabled={!metrics || exporting}
             className="bg-white border border-outline-variant px-4 py-2 rounded-lg flex items-center gap-2 text-body-md font-medium hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <FileDown className="w-4 h-4 text-outline" />
+            {exporting ? <Loader2 className="w-4 h-4 text-outline animate-spin" /> : <FileDown className="w-4 h-4 text-outline" />}
             تصدير البيانات
           </button>
           <Link
@@ -433,14 +316,14 @@ export default function DashboardPage() {
           {/* ── Charts Row ───────────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
             <div className="lg:col-span-2">
-              <RevenueChart />
+              <DemoDataNotice title="ترند الإيرادات السنوية" />
             </div>
-            <ExpenseDonut />
+            <DemoDataNotice title="توزيع المصروفات" />
           </div>
 
           {/* ── Branch Performance ───────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-            <BranchPerformance />
+            <DemoDataNotice title="أداء الفروع الكبرى" />
 
             {/* Update highlight card */}
             <div className="relative rounded-xl overflow-hidden shadow-card group min-h-[200px]">

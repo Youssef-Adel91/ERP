@@ -4,6 +4,7 @@ from datetime import date
 from enum import StrEnum
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, Column, Numeric, String, UniqueConstraint, text, Date
 from sqlmodel import Field, SQLModel
 
@@ -50,7 +51,24 @@ class Warehouse(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(max_length=255)
     code: str = Field(max_length=50, index=True)
-    type: WarehouseType = Field(default=WarehouseType.MAIN)
+    # NOTE: must be explicitly schema-qualified via sa.Enum(..., schema="tenant"),
+    # matching JournalEntryStatus/AccountType/ShiftStatus/etc. elsewhere in the
+    # codebase. Without an explicit schema= here, SQLModel auto-infers a bare
+    # `sa.Enum(WarehouseType)` with no schema, so generated SQL casts parameters
+    # as unqualified `$N::warehousetype` — which only resolves if "warehousetype"
+    # happens to be on the connection's search_path, which it is not. That
+    # produced `asyncpg.exceptions.UndefinedObjectError: type "warehousetype"
+    # does not exist` even though the type exists (correctly) inside each
+    # tenant schema, created by f93809b48226_phase_1b_step_6_complete_inventory.py.
+    # create_type=False because the enum type is already created by that
+    # migration; SQLAlchemy/Alembic must never try to CREATE TYPE it again.
+    type: WarehouseType = Field(
+        default=WarehouseType.MAIN,
+        sa_column=Column(
+            sa.Enum(WarehouseType, name="warehousetype", schema="tenant", create_type=False),
+            nullable=False,
+        ),
+    )
 
 
 class Item(SQLModel, table=True):
@@ -142,7 +160,16 @@ class Batch(SQLModel, table=True):
     
     manufacture_date: date | None = Field(default=None, sa_column=Column(Date))
     expiry_date: date | None = Field(default=None, sa_column=Column(Date))
-    status: BatchStatus = Field(default=BatchStatus.ACTIVE)
+    # See NOTE on Warehouse.type above — same missing-schema bug. Enum type
+    # "batchstatus" is created inside the tenant schema by
+    # f93809b48226_phase_1b_step_6_complete_inventory.py.
+    status: BatchStatus = Field(
+        default=BatchStatus.ACTIVE,
+        sa_column=Column(
+            sa.Enum(BatchStatus, name="batchstatus", schema="tenant", create_type=False),
+            nullable=False,
+        ),
+    )
 
 
 class SerialNumber(SQLModel, table=True):
@@ -157,7 +184,16 @@ class SerialNumber(SQLModel, table=True):
     variant_id: UUID | None = Field(default=None, index=True)
     serial_no: str = Field(max_length=100, index=True)
     
-    state: SerialState = Field(default=SerialState.IN_STOCK)
+    # See NOTE on Warehouse.type above — same missing-schema bug. Enum type
+    # "serialstate" is created inside the tenant schema by
+    # f93809b48226_phase_1b_step_6_complete_inventory.py.
+    state: SerialState = Field(
+        default=SerialState.IN_STOCK,
+        sa_column=Column(
+            sa.Enum(SerialState, name="serialstate", schema="tenant", create_type=False),
+            nullable=False,
+        ),
+    )
     warehouse_id: UUID | None = Field(default=None, index=True)
     current_owner_contact_id: UUID | None = Field(default=None, index=True)
 

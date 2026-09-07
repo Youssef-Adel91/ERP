@@ -15,13 +15,15 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from app.core.db.database import get_tenant_db
+from app.core.db.database import get_redis, get_tenant_db
+from app.core.idempotency import IdempotencyKey, get_cached_resource_id, store_idempotent_result
 from app.modules.inventory.models.transfer import StockTransfer, StockTransferLine
 from app.modules.inventory.services.transfer import (
     ReceiptLine,
@@ -59,9 +61,26 @@ async def create_transfer(
     data: TransferCreateRequest,
     current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
+    redis: aioredis.Redis = Depends(get_redis),
+    idempotency_key: str | None = IdempotencyKey,
 ) -> StockTransfer:
     if not data.lines:
         raise HTTPException(status_code=422, detail="Transfer must contain at least one line")
+
+    # Idempotency: a client-supplied Idempotency-Key header lets a retried
+    # (e.g. network-retried or double-clicked) request return the transfer
+    # already created by the first attempt instead of creating a duplicate
+    # stock movement.
+    cached_id = await get_cached_resource_id(
+        redis,
+        tenant_id=current_user.tenant_id,
+        endpoint="inventory.transfers.create",
+        idempotency_key=idempotency_key,
+    )
+    if cached_id is not None:
+        existing = await session.get(StockTransfer, cached_id)
+        if existing is not None:
+            return existing
 
     transfer = StockTransfer(
         transfer_number=data.transfer_number,
@@ -86,6 +105,13 @@ async def create_transfer(
 
     await session.commit()
     await session.refresh(transfer)
+    await store_idempotent_result(
+        redis,
+        tenant_id=current_user.tenant_id,
+        endpoint="inventory.transfers.create",
+        idempotency_key=idempotency_key,
+        resource_id=transfer.id,
+    )
     return transfer
 
 

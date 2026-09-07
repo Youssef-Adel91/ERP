@@ -9,17 +9,25 @@ import hmac
 import re
 from hashlib import sha256
 
+from app.core.config import settings
+
 
 def get_vault_pepper(pepper_ref: str = "vault://secrets/trust/pepper/v1") -> str:
     """
-    Simulates fetching the pepper from a secure Vault via reference.
-    In a real implementation, this would call a Vault client (e.g., HashiCorp Vault).
+    Resolve the Trust Network's HMAC pepper.
+
+    `pepper_ref` keeps the vault:// URI shape so this stays a drop-in
+    replacement once a real Vault client is wired in, but the actual
+    secret is read from settings.TRUST_PEPPER (env var / .env — same
+    discipline as app.core.config.Settings.SECRET_KEY) rather than a
+    hardcoded literal. A hardcoded pepper is no pepper at all: anyone who
+    reads this source tree could reproduce every phone hash the Trust
+    Network stores.
     """
-    if pepper_ref.startswith("vault://"):
-        # Simulated Vault retrieval
-        return "b7f9d8e4a2c1..."  # Deterministic test pepper
-    
-    raise ValueError("Invalid pepper reference format. Must be a vault:// URI.")
+    if not pepper_ref.startswith("vault://"):
+        raise ValueError("Invalid pepper reference format. Must be a vault:// URI.")
+
+    return settings.TRUST_PEPPER
 
 
 def hash_phone_number(phone: str, pepper: str | None = None) -> str:

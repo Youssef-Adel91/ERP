@@ -162,9 +162,12 @@ class BostaProvider(CarrierProvider):
             or headers.get("x-signature")
             or headers.get("X-Bosta-Signature", "")
         )
-        if not sig_header or not secret:
-            # If no secret or no header is configured in testing, default to True
-            return True
+        if not sig_header:
+            logger.warning("Bosta webhook rejected: missing signature header")
+            return False
+        if not secret:
+            logger.warning("Bosta webhook rejected: no webhook secret configured")
+            return False
 
         computed = hmac.new(
             secret.encode("utf-8"),

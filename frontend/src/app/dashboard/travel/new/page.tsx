@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/card";
 import {
   ArrowRight,
   Loader2,

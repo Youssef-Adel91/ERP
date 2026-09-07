@@ -60,10 +60,12 @@ export default function LoginPage() {
         password: data.password,
       });
 
-      saveSession(tokens.access_token, "", tokens.refresh_token);
+      const persist = !!data.remember;
+
+      saveSession(tokens.access_token, "", tokens.refresh_token, persist);
 
       const { data: me } = await apiClient.get<MeResponse>("/auth/me");
-      saveSession(tokens.access_token, me.tenant_id, tokens.refresh_token);
+      saveSession(tokens.access_token, me.tenant_id, tokens.refresh_token, persist);
 
       setUser({
         id: me.id,
@@ -163,9 +165,9 @@ export default function LoginPage() {
                   </svg>
                   كلمة المرور
                 </label>
-                <a href="#" className="text-primary font-body-sm text-body-sm hover:underline">
+                <Link href="/forgot-password" className="text-primary font-body-sm text-body-sm hover:underline">
                   نسيت كلمة المرور؟
-                </a>
+                </Link>
               </div>
               <div className="relative">
                 <input

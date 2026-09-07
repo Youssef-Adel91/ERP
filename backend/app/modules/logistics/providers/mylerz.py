@@ -159,8 +159,12 @@ class MylerzProvider(CarrierProvider):
             or headers.get("x-signature")
             or headers.get("X-Mylerz-Signature", "")
         )
-        if not sig_header or not secret:
-            return True
+        if not sig_header:
+            logger.warning("Mylerz webhook rejected: missing signature header")
+            return False
+        if not secret:
+            logger.warning("Mylerz webhook rejected: no webhook secret configured")
+            return False
 
         computed = hmac.new(
             secret.encode("utf-8"),

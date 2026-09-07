@@ -13,7 +13,8 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlmodel import Field, SQLModel
+import sqlalchemy as sa
+from sqlmodel import Column, Field, SQLModel
 
 
 def utc_now() -> datetime:
@@ -56,6 +57,20 @@ class CarrierSettlement(SQLModel, table=True):
     """
 
     __tablename__ = "finance_carrier_settlements"
+    # Bug fixed here: this table originally had no schema declared at all,
+    # which was assumed to resolve at runtime via the tenant connection's
+    # search_path — but app/core/db/database.py's tenant_session() does NOT
+    # set search_path; it relies entirely on schema_translate_map={"tenant":
+    # schema}, which only rewrites constructs that explicitly declare
+    # schema="tenant" (see that function's own docstring: "All models with
+    # {"schema": "tenant"} will be routed to the tenant's schema"). Without
+    # this, every query compiled to a bare unqualified table name, which
+    # Postgres resolved against the connection's actual default search_path
+    # ("$user", public — confirmed live), never finding the table even
+    # though it existed correctly in the tenant's real schema. Confirmed via
+    # a live `GET /finance/settlements` 500 that persisted across a fresh
+    # backend restart, ruling out stale connection-pool state.
+    __table_args__ = {"schema": "tenant"}
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     carrier_code: str = Field(index=True, max_length=50)
@@ -63,12 +78,48 @@ class CarrierSettlement(SQLModel, table=True):
     gross_amount: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
     total_fees: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
     net_amount: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
+    # NOTE: member NAMES are uppercase (IMPORTED, MATCHED, ...) but VALUES are
+    # lowercase ("imported", "matched", ...) — same shape as
+    # app.modules.finance.models.cheques.ChequeStatus, which needed
+    # values_callable to bind each member's `.value` instead of SQLAlchemy's
+    # default `.name` binding (a bare sa.Enum(...) here would send "IMPORTED"
+    # to Postgres and fail against the lowercase DB enum labels). schema=
+    # "tenant" + create_type=False is required regardless of whether the
+    # table itself is schema-qualified — see ShiftStatus/EmployeeStatus in
+    # this codebase for the same "unqualified enum cast doesn't reliably
+    # resolve via search_path" failure mode this avoids. The matching
+    # `tenant.carriersettlementstate` type is created explicitly by
+    # z6c1a2r3r4i5_add_carrier_settlements_tables.py.
     state: CarrierSettlementState = Field(
         default=CarrierSettlementState.IMPORTED,
-        index=True,
+        sa_column=Column(
+            sa.Enum(
+                CarrierSettlementState,
+                name="carriersettlementstate",
+                schema="tenant",
+                create_type=False,
+                values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            ),
+            nullable=False,
+            index=True,
+        ),
     )
-    created_at: datetime = Field(default_factory=utc_now)
-    posted_at: datetime | None = Field(default=None)
+    # Bug fixed here: must be explicitly sa_type=DateTime(timezone=True),
+    # matching the same fix already applied to CashShift.opened_at/closed_at
+    # (app/modules/pos/models.py) and BaseMixin's created_at/updated_at.
+    # Without it, SQLModel infers a bare `DateTime()` (Postgres TIMESTAMP
+    # WITHOUT TIME ZONE) regardless of what this migration's column type
+    # actually is, while `utc_now()` above returns a tz-aware datetime —
+    # asyncpg refuses to encode a tz-aware Python datetime into a naive
+    # `timestamp` column: "can't subtract offset-naive and offset-aware
+    # datetimes". Confirmed live via a `POST /finance/settlements/match-json`
+    # 400 with that exact asyncpg.exceptions.DataError.
+    created_at: datetime = Field(
+        default_factory=utc_now,
+        sa_type=sa.DateTime(timezone=True),
+        sa_column_kwargs={"nullable": False},
+    )
+    posted_at: datetime | None = Field(default=None, sa_type=sa.DateTime(timezone=True))
     journal_entry_id: UUID | None = Field(default=None, index=True)
 
 
@@ -78,9 +129,14 @@ class SettlementLine(SQLModel, table=True):
     """
 
     __tablename__ = "finance_settlement_lines"
+    # See CarrierSettlement.__table_args__ above for why this is required.
+    __table_args__ = {"schema": "tenant"}
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    settlement_id: UUID = Field(foreign_key="finance_carrier_settlements.id", index=True)
+    # Qualified to match CarrierSettlement now living in schema="tenant" —
+    # an unqualified target string here would fail to resolve against the
+    # now schema-qualified table at mapper-configuration time.
+    settlement_id: UUID = Field(foreign_key="tenant.finance_carrier_settlements.id", index=True)
     shipment_id: UUID | None = Field(default=None, index=True)
     awb_number: str = Field(index=True, max_length=100)
     cod_collected: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
@@ -88,13 +144,35 @@ class SettlementLine(SQLModel, table=True):
     cod_fee: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
     return_fee: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
     net_remitted: Decimal = Field(default=Decimal("0.00"), max_digits=15, decimal_places=4)
+    # See CarrierSettlement.state above for why values_callable + explicit
+    # schema="tenant"/create_type=False are both required here.
     match_state: SettlementLineMatchState = Field(
         default=SettlementLineMatchState.UNMATCHED,
-        index=True,
+        sa_column=Column(
+            sa.Enum(
+                SettlementLineMatchState,
+                name="settlementlinematchstate",
+                schema="tenant",
+                create_type=False,
+                values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            ),
+            nullable=False,
+            index=True,
+        ),
     )
     exception_type: SettlementLineExceptionType = Field(
         default=SettlementLineExceptionType.NONE,
-        index=True,
+        sa_column=Column(
+            sa.Enum(
+                SettlementLineExceptionType,
+                name="settlementlineexceptiontype",
+                schema="tenant",
+                create_type=False,
+                values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            ),
+            nullable=False,
+            index=True,
+        ),
     )
     notes: str = Field(default="", max_length=500)
 
@@ -106,6 +184,8 @@ class CarrierReceivableSnapshot(SQLModel, table=True):
     """
 
     __tablename__ = "finance_carrier_receivable_snapshots"
+    # See CarrierSettlement.__table_args__ above for why this is required.
+    __table_args__ = {"schema": "tenant"}
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     carrier_code: str = Field(index=True, max_length=50)

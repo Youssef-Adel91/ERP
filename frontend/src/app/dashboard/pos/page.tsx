@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
@@ -16,6 +17,9 @@ import {
   LogOut,
   Package,
   CheckCircle2,
+  History,
+  Undo2,
+  X,
 } from "lucide-react";
 
 // ── Types (mirrors backend app/modules/pos/api.py) ───────────────────────────
@@ -48,6 +52,17 @@ interface CartLine {
   qty: number;
 }
 
+interface PosSaleRow {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  cashier_id: string;
+  amount: string;
+  payment_method: string;
+  created_at: string;
+  is_refund: boolean;
+}
+
 export default function PosPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
@@ -55,6 +70,13 @@ export default function PosPage() {
   const [lastReceipt, setLastReceipt] = useState<{ invoice_number: string; grand_total: string } | null>(null);
 
   const queryClient = useQueryClient();
+
+  // One key per checkout attempt (survives a manual retry of the SAME
+  // cart after a network error/timeout, so a double-tap or a client retry
+  // can't ring up the sale twice server-side — see backend
+  // app/modules/pos/api.py::checkout Idempotency-Key handling). Cleared on
+  // success (new cart) so the next sale gets a fresh key.
+  const checkoutIdempotencyKeyRef = useRef<string | null>(null);
 
   const { data: shift, isLoading: shiftLoading } = useQuery({
     queryKey: ["pos-current-shift"],
@@ -125,18 +147,24 @@ export default function PosPage() {
   const checkoutMutation = useMutation({
     mutationFn: async () => {
       if (!shift) throw new Error("no shift");
-      const res = await apiClient.post("/pos/checkout", {
-        shift_id: shift.id,
-        lines: cart.map((l) => ({
-          item_id: l.item_id,
-          variant_id: l.variant_id,
-          qty: l.qty,
-          unit_price: l.unit_price,
-        })),
-      });
+      checkoutIdempotencyKeyRef.current ??= crypto.randomUUID();
+      const res = await apiClient.post(
+        "/pos/checkout",
+        {
+          shift_id: shift.id,
+          lines: cart.map((l) => ({
+            item_id: l.item_id,
+            variant_id: l.variant_id,
+            qty: l.qty,
+            unit_price: l.unit_price,
+          })),
+        },
+        { headers: { "Idempotency-Key": checkoutIdempotencyKeyRef.current } }
+      );
       return res.data as { invoice_number: string; grand_total: string };
     },
     onSuccess: (data) => {
+      checkoutIdempotencyKeyRef.current = null;
       setCheckoutError("");
       setLastReceipt(data);
       setCart([]);
@@ -306,6 +334,7 @@ export default function PosPage() {
 
 function ShiftBar({ shift, onClosed }: { shift: CashShift; onClosed: () => void }) {
   const [showClose, setShowClose] = useState(false);
+  const [showSales, setShowSales] = useState(false);
 
   return (
     <div className="glass-card rounded-xl px-4 py-2.5 flex items-center justify-between">
@@ -316,17 +345,208 @@ function ShiftBar({ shift, onClosed }: { shift: CashShift; onClosed: () => void 
           <span className="font-data-mono text-on-surface" dir="ltr">{shift.opening_balance} EGP</span>
         </span>
       </div>
-      <button
-        onClick={() => setShowClose(true)}
-        className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-body-sm font-semibold text-error hover:bg-error-container transition-colors"
-      >
-        <LogOut className="w-4 h-4" /> إغلاق الوردية
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setShowSales(true)}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container transition-colors"
+        >
+          <History className="w-4 h-4" /> مبيعات الوردية
+        </button>
+        <button
+          onClick={() => setShowClose(true)}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-body-sm font-semibold text-error hover:bg-error-container transition-colors"
+        >
+          <LogOut className="w-4 h-4" /> إغلاق الوردية
+        </button>
+      </div>
 
       {showClose && (
         <CloseShiftModal shift={shift} onClose={() => setShowClose(false)} onClosed={onClosed} />
       )}
+      {showSales && <ShiftSalesModal shift={shift} onClose={() => setShowSales(false)} />}
     </div>
+  );
+}
+
+// ── Shift sales history + refund ─────────────────────────────────────────────
+
+function ShiftSalesModal({ shift, onClose }: { shift: CashShift; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [refundTarget, setRefundTarget] = useState<PosSaleRow | null>(null);
+
+  const { data: sales, isLoading, isError } = useQuery({
+    queryKey: ["pos-shift-sales", shift.id],
+    queryFn: async () => {
+      const res = await apiClient.get<PosSaleRow[]>(`/pos/shifts/${shift.id}/sales`);
+      return res.data;
+    },
+  });
+
+  // Rendered via a portal into document.body: ShiftBar's own wrapper (the
+  // "glass-card" class, which sets backdrop-filter) establishes a new CSS
+  // stacking context, which traps a plain `fixed` descendant instead of
+  // truly overlaying the whole viewport — confirmed live: without the
+  // portal, this modal was reachable in the DOM/accessibility tree but
+  // visually painted BEHIND the catalog grid panel (a later DOM sibling at
+  // the same stacking level), so clicks on it landed on the grid instead.
+  // Escaping to document.body sidesteps the ancestor's stacking context
+  // entirely, matching the standard fix for this exact backdrop-filter/
+  // fixed-position interaction.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding space-y-4 max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">مبيعات الوردية الحالية</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center text-on-surface-variant gap-2 py-8">
+            <Loader2 className="w-5 h-5 animate-spin" /> جاري التحميل...
+          </div>
+        ) : isError ? (
+          <div className="flex items-center gap-2 text-body-sm text-error py-4">
+            <AlertCircle className="w-4 h-4 shrink-0" /> تعذر تحميل مبيعات الوردية.
+          </div>
+        ) : !sales || sales.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-on-surface-variant gap-2 py-8">
+            <ShoppingCart className="w-7 h-7 text-outline-variant" />
+            <p className="text-body-sm">لا توجد مبيعات على هذه الوردية بعد.</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto divide-y divide-outline-variant/30">
+            {sales.map((sale) => (
+              <div key={sale.id} className="py-2.5 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-body-sm font-medium text-on-surface truncate" dir="ltr">
+                    {sale.invoice_number}
+                  </p>
+                  <p className="text-[11px] text-outline">
+                    {new Date(sale.created_at).toLocaleString("ar-EG")}
+                  </p>
+                </div>
+                <span
+                  className={`text-body-sm font-bold font-data-mono ${sale.is_refund ? "text-error" : "text-on-surface"}`}
+                  dir="ltr"
+                >
+                  {sale.amount} EGP
+                </span>
+                {!sale.is_refund && (
+                  <button
+                    onClick={() => setRefundTarget(sale)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-warning-bg text-warning font-semibold text-[11px] hover:opacity-80 transition-opacity shrink-0"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" /> استرجاع
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {refundTarget && (
+        <RefundSaleModal
+          sale={refundTarget}
+          shift={shift}
+          onClose={() => setRefundTarget(null)}
+          onRefunded={() => {
+            queryClient.invalidateQueries({ queryKey: ["pos-shift-sales", shift.id] });
+            queryClient.invalidateQueries({ queryKey: ["pos-current-shift"] });
+          }}
+        />
+      )}
+    </div>,
+    document.body
+  );
+}
+
+function RefundSaleModal({
+  sale,
+  shift,
+  onClose,
+  onRefunded,
+}: {
+  sale: PosSaleRow;
+  shift: CashShift;
+  onClose: () => void;
+  onRefunded: () => void;
+}) {
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post(`/pos/sales/${sale.id}/refund`, { shift_id: shift.id });
+    },
+    onSuccess: () => {
+      setDone(true);
+      onRefunded();
+    },
+    onError: (err: AxiosError<{ detail?: string }>) => {
+      setError(pickDetail(err, "تعذر تسجيل المرتجع."));
+    },
+  });
+
+  // Portal for the same reason as ShiftSalesModal above — this modal is
+  // opened FROM inside ShiftSalesModal's own tree, so it inherits the exact
+  // same backdrop-filter stacking-context trap if not escaped separately.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse-surface/40 p-gutter"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-headline-sm text-headline-sm text-on-surface">استرجاع عملية بيع</h3>
+        <p className="text-body-sm text-on-surface-variant">
+          فاتورة <span dir="ltr">{sale.invoice_number}</span> بقيمة{" "}
+          <span className="font-data-mono text-on-surface" dir="ltr">{sale.amount} EGP</span>
+          {" "}— سيتم إصدار إشعار دائن (Credit Note) واسترجاع كامل قيمة الفاتورة.
+        </p>
+
+        {error && (
+          <div className="flex items-center gap-2 bg-error-container text-on-error-container p-2.5 rounded-lg text-body-sm font-medium">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+          </div>
+        )}
+        {done && (
+          <div className="flex items-center gap-2 bg-success-bg text-success p-2.5 rounded-lg text-body-sm font-medium">
+            <CheckCircle2 className="w-4 h-4 shrink-0" /> تم تسجيل المرتجع بنجاح.
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          {!done && (
+            <button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+              className="flex-1 h-11 rounded-lg bg-warning-bg text-warning font-bold text-body-md flex items-center justify-center gap-2 hover:opacity-80 transition-opacity disabled:opacity-70"
+            >
+              {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد الاسترجاع
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className={
+              done
+                ? "flex-1 h-11 rounded-lg bg-primary text-on-primary font-bold text-body-md flex items-center justify-center hover:opacity-90 transition-opacity"
+                : "h-11 px-4 rounded-lg border border-outline-variant text-on-surface-variant font-semibold text-body-md hover:bg-surface-container transition-colors"
+            }
+          >
+            {done ? "تم" : "إلغاء"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 

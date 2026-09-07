@@ -5,7 +5,7 @@ import logging
 from uuid import UUID
 
 from app.core.events.event_bus import get_event_bus, DomainEvent
-from app.core.db.database import AsyncSessionLocal, public_session
+from app.core.db.database import public_session, tenant_session
 from app.core.notifications.dispatch import notify_contact
 from app.modules.contacts.models import Contact
 
@@ -25,11 +25,7 @@ async def handle_invoice_posted_whatsapp(event: DomainEvent) -> None:
     phone = None
     parameters: list[dict] = []
 
-    async with AsyncSessionLocal() as session:
-        # Scope session to the event's tenant schema
-        tenant_schema = f"tenant_{event.tenant_id.replace('-', '')}"
-        await session.execute(f"SET search_path TO {tenant_schema}")
-
+    async with tenant_session(event.tenant_id) as session:
         contact_id_str = event.payload.get("contact_id")
         if not contact_id_str:
             return
@@ -76,11 +72,7 @@ async def handle_invoice_overdue_whatsapp(event: DomainEvent) -> None:
     phone = None
     parameters: list[dict] = []
 
-    async with AsyncSessionLocal() as session:
-        # Scope session to the event's tenant schema
-        tenant_schema = f"tenant_{event.tenant_id.replace('-', '')}"
-        await session.execute(f"SET search_path TO {tenant_schema}")
-
+    async with tenant_session(event.tenant_id) as session:
         customer_id_str = event.payload.get("customer_id")
         if not customer_id_str:
             return

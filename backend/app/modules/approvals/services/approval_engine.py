@@ -4,7 +4,8 @@ app/modules/approvals/services/approval_engine.py — Universal Approval Engine 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Optional
+from decimal import Decimal, InvalidOperation
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,13 +16,79 @@ from app.modules.approvals.models.core import (
     ApprovalDecision,
     ApprovalRequest,
     ApprovalRequestState,
+    ApprovalRule,
     DecisionType,
+    RuleOperator,
 )
 from app.modules.approvals.services.exceptions import (
     ContentHashMismatchError,
     IllegalStateTransitionError,
     SegregationOfDutiesError,
 )
+
+
+def _evaluate_condition(operator: RuleOperator, field_value: Any, condition_value: Any) -> bool:
+    """Evaluate one ApprovalRule condition against a document's field value."""
+    if field_value is None:
+        return False
+    if operator == RuleOperator.EQ:
+        return str(field_value) == str(condition_value)
+    if operator == RuleOperator.IN:
+        return field_value in (condition_value or [])
+    if operator == RuleOperator.NOT_IN:
+        return field_value not in (condition_value or [])
+    # Remaining operators (gt/gte/lt/lte) are numeric comparisons.
+    lhs = Decimal(str(field_value))
+    rhs = Decimal(str(condition_value))
+    if operator == RuleOperator.GT:
+        return lhs > rhs
+    if operator == RuleOperator.GTE:
+        return lhs >= rhs
+    if operator == RuleOperator.LT:
+        return lhs < rhs
+    if operator == RuleOperator.LTE:
+        return lhs <= rhs
+    return False
+
+
+async def find_matching_rules(
+    session: AsyncSession,
+    document_type: str,
+    fields: dict[str, Any],
+) -> list[ApprovalRule]:
+    """
+    Returns the active `ApprovalRule`s for `document_type` whose condition
+    matches `fields` (e.g. {"total_amount": Decimal("15000")}), ordered by
+    `sequence_no`. An **empty list means no approval is required** — this is
+    the load-bearing behavior that keeps tenants with zero configured rules
+    on the exact same auto-approve path they had before the Approval Engine
+    was wired into any document flow.
+
+    A rule whose `condition_value` can't be compared to the document's field
+    (e.g. a numeric operator against non-numeric data — a misconfiguration)
+    is skipped rather than raised, so a bad rule can never block or crash
+    document submission.
+    """
+    now = datetime.now(UTC)
+    stmt = (
+        select(ApprovalRule)
+        .where(ApprovalRule.document_type == document_type, ApprovalRule.is_active == True)  # noqa: E712
+        .order_by(ApprovalRule.sequence_no)
+    )
+    rules = (await session.execute(stmt)).scalars().all()
+
+    matched: list[ApprovalRule] = []
+    for rule in rules:
+        if rule.effective_from and now < rule.effective_from:
+            continue
+        if rule.effective_to and now > rule.effective_to:
+            continue
+        try:
+            if _evaluate_condition(rule.operator, fields.get(rule.condition_field), rule.condition_value):
+                matched.append(rule)
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+    return matched
 
 
 async def submit_for_approval(

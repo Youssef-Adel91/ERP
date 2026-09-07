@@ -34,6 +34,7 @@ Architecture:
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -43,6 +44,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db.context import current_session
 from app.modules.system.models import OutboxEvent
 
@@ -185,17 +187,48 @@ class EventBus:
 
     async def publish(self, event: DomainEvent, session: AsyncSession | None = None) -> None:
         """
-        Publish a domain event via the Transactional Outbox pattern.
-        
+        Publish a domain event via the Transactional Outbox pattern, AND (per
+        this module's own documented design — see "Backend Selection" above)
+        dispatch it synchronously, in-process, to every subscriber when
+        `EVENT_BUS_BACKEND=memory`.
+
+        WHY THE SYNCHRONOUS DISPATCH WAS ADDED (previously missing):
+        The outbox row alone is not sufficient to make a subscriber run —
+        something has to read `outbox_events`, relay it to Redis
+        (`app/core/events/relay.py`), and a consumer has to read that Redis
+        stream and call the registered handlers. That whole pipeline only
+        exists as an ARQ worker task (`app/workers/tasks/main.py`), which is
+        a separate process `run.ps1` never starts, and no code anywhere in
+        this codebase ever reads the Redis stream to invoke a handler.
+        Confirmed live: every `@event_bus.subscribe(...)` handler in
+        app/modules/accounting/consumers/*.py (the GL Bridge — invoice
+        posting, credit notes, stock takes, purchase bills/payments, and the
+        new sales.payment_received from Wave 3 item 1) was registered but
+        never once invoked, so no journal entry was ever auto-created for
+        any of them. The "memory" backend's docstring already promised
+        "Single-process async dispatch" — this makes that true instead of
+        only writing to the outbox.
+
         If no session is provided, it attempts to fetch the ambient session
-        using `current_session.get()`. It creates an `OutboxEvent` and calls `session.add()`.
-        It does NOT call `commit()`.
+        using `current_session.get()`. It creates an `OutboxEvent` and calls
+        `session.add()`. It does NOT call `commit()` — dispatch below runs
+        inside the same not-yet-committed transaction as the publisher, so a
+        GL-posting handler's writes land atomically with the business
+        operation that triggered them (same guarantee the outbox+Redis path
+        was meant to provide, just synchronous instead of eventually
+        consistent).
+
+        Handler failures are caught and logged, never re-raised: a bug in an
+        unrelated subscriber (e.g. a notification listener) must never abort
+        the publisher's own transaction. This also means a broken GL handler
+        won't hard-fail the request either — always check backend logs after
+        posting a new document type until it's been live-verified once.
         """
         sess = session or current_session.get()
         if not sess:
             raise RuntimeError("EventBus.publish requires an active AsyncSession.")
-            
-        # The aggregate_id is not strictly typed in DomainEvent yet, but we 
+
+        # The aggregate_id is not strictly typed in DomainEvent yet, but we
         # can default to tenant_id or a system UUID if not present.
         aggregate_id = event.payload.get("id") or getattr(event, "aggregate_id", None) or UUID("00000000-0000-0000-0000-000000000000")
         if isinstance(aggregate_id, str):
@@ -203,9 +236,9 @@ class EventBus:
                 aggregate_id = UUID(aggregate_id)
             except ValueError:
                 aggregate_id = UUID("00000000-0000-0000-0000-000000000000")
-        
+
         tenant_id = UUID("00000000-0000-0000-0000-000000000000") if event.tenant_id == "system" else UUID(event.tenant_id)
-                
+
         outbox_event = OutboxEvent(
             tenant_id=tenant_id,
             aggregate_type=event.event_type.split(".")[0],
@@ -214,6 +247,24 @@ class EventBus:
             payload=event.model_dump(mode="json"),
         )
         sess.add(outbox_event)
+
+        if settings.EVENT_BUS_BACKEND == "memory":
+            for handler in self.get_handlers(event.event_type):
+                try:
+                    params = inspect.signature(handler).parameters
+                    if "session" in params:
+                        await handler(event, session=sess)
+                    else:
+                        await handler(event)
+                except Exception:
+                    logger.exception(
+                        "EventBus (memory backend): handler '%s' raised while "
+                        "processing event_type='%s' event_id=%s — swallowed so "
+                        "the publisher's own transaction is not aborted.",
+                        getattr(handler, "__name__", repr(handler)),
+                        event.event_type,
+                        event.event_id,
+                    )
 
 # ── Singleton Instance & Factory ──────────────────────────────────────────────
 

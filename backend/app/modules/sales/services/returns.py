@@ -8,7 +8,6 @@ from app.core.events.event_bus import DomainEvent, get_event_bus
 from app.modules.inventory.models.core import (
     CostConsumption,
     CostLayer,
-    Item,
     SerialState,
     StockLevel,
     StockMovement,
@@ -101,6 +100,34 @@ async def create_sales_return(
     return sales_return
 
 
+async def _latest_cost_layer_unit_cost(session: AsyncSession, item_id: UUID) -> Decimal:
+    """
+    Fallback historical-cost lookup for process_sales_return() when no matching
+    CostConsumption records exist for the original sale (e.g. the invoice was
+    ad-hoc with no SalesOrder to key the SALES_ISSUE movement off of, so Hook 2's
+    primary lookup can't run at all).
+
+    Bug fixed here: the previous code referenced `item.standard_cost`, a field
+    that has never existed on the `Item` model (models/core.py) — every return
+    that hit this fallback crashed with AttributeError. There is no per-item
+    "standard cost" concept anywhere else in this codebase; the real source of
+    truth for unit cost is CostLayer (the same table this function reads from
+    for the primary lookup and writes to a few lines below for the new inbound
+    layer). So instead we fall back to the most recently received CostLayer for
+    this item, across any warehouse/batch/serial, as the best available estimate
+    of what it actually cost. Returns 0 (previous silent-zero behavior preserved)
+    if the item has no CostLayer history at all.
+    """
+    stmt = (
+        select(CostLayer)
+        .where(CostLayer.item_id == item_id)
+        .order_by(CostLayer.received_at.desc())
+        .limit(1)
+    )
+    latest_layer = (await session.execute(stmt)).scalar_one_or_none()
+    return latest_layer.unit_cost_current if latest_layer else Decimal("0.0000")
+
+
 async def process_sales_return(
     session: AsyncSession,
     return_id: UUID,
@@ -164,13 +191,9 @@ async def process_sales_return(
                 if total_qty > 0:
                     historical_unit_cost = total_cost / total_qty
             else:
-                item = await session.get(Item, line.item_id)
-                if item and item.standard_cost:
-                    historical_unit_cost = item.standard_cost
+                historical_unit_cost = await _latest_cost_layer_unit_cost(session, line.item_id)
         else:
-            item = await session.get(Item, line.item_id)
-            if item and item.standard_cost:
-                historical_unit_cost = item.standard_cost
+            historical_unit_cost = await _latest_cost_layer_unit_cost(session, line.item_id)
 
         # UoM Conversion to Base Unit
         base_qty = line.qty
@@ -271,7 +294,19 @@ async def post_credit_note(
     credit_note_number = f"CN-{return_obj.return_number}"
     credit_note = SalesInvoice(
         invoice_number=credit_note_number,
-        order_id=return_obj.order_id or return_obj.invoice_id,
+        # Bug fixed here: SalesInvoice.order_id is a foreign key to
+        # sales_orders.id, NOT a generic "originating document" pointer. The
+        # previous `return_obj.order_id or return_obj.invoice_id` fallback
+        # put the ORIGINAL SalesInvoice's id into this column whenever the
+        # return had no real order (e.g. any ad-hoc invoice, which is common
+        # — order_id is nullable precisely for that case) — violating the FK
+        # constraint every time, confirmed live via
+        # `sales_invoices_order_id_fkey` IntegrityError. There's no order to
+        # link when there isn't one; leave it null. Traceability back to the
+        # original invoice/return is already preserved via
+        # SalesReturn.invoice_id and SalesReturn.credit_note_id, so nothing
+        # is lost.
+        order_id=return_obj.order_id,
         contact_id=return_obj.contact_id,
         status=SalesInvoiceStatus.POSTED,
         subtotal=-return_obj.subtotal,

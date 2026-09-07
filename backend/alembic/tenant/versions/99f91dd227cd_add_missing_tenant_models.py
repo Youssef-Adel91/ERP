@@ -102,6 +102,42 @@ def upgrade() -> None:
     op.create_index(op.f('ix_tenant_cases_case_type_id'), 'cases', ['case_type_id'], unique=False, schema='tenant')
     op.create_index(op.f('ix_tenant_cases_current_stage'), 'cases', ['current_stage'], unique=False, schema='tenant')
     op.create_index(op.f('ix_tenant_cases_resource_id'), 'cases', ['resource_id'], unique=False, schema='tenant')
+    # Create the employeestatus enum type BEFORE the table that references it,
+    # explicitly scoped to the tenant schema (matching how every other
+    # native-enum column in this migration chain is scoped, e.g.
+    # accounttype/contactstatus/batchstatus/... all use schema='tenant').
+    #
+    # ROOT CAUSE OF THE ORIGINAL BUG: the column below used to be declared as
+    # a bare `sa.Enum('ACTIVE', 'ON_LEAVE', 'TERMINATED', name='employeestatus')`
+    # with NO schema= and NO create_type=False. Alembic's op.create_table()
+    # then let SQLAlchemy auto-emit an *unqualified* `CREATE TYPE
+    # employeestatus AS ENUM (...)` at table-creation time. Because it was
+    # unqualified, it did not contain the literal "tenant". token that
+    # env.py's before_cursor_execute listener rewrites to the real tenant
+    # schema, so it was created once in the connection's default schema
+    # (public) by whichever tenant happened to migrate this revision first.
+    # Every subsequent tenant then hit `DuplicateObjectError: type
+    # "employeestatus" already exists` because the bare CREATE TYPE was
+    # attempted again with no idempotency guard. This is the exact same bug
+    # class already diagnosed and fixed for chequetype/chequestatus in
+    # c7d8e9f0a1b2_add_cheques_table.py — same fix pattern applied here:
+    # an idempotent, tenant-schema-qualified DO $$ ... EXCEPTION WHEN
+    # duplicate_object THEN NULL; END $$ block, plus postgresql.ENUM(...,
+    # schema='tenant', create_type=False) on the column so Alembic never
+    # tries to auto-create the type a second time.
+    #
+    # This change only affects schemas that have NOT yet run this revision
+    # (it is a no-op for already-migrated tenants, whose alembic_version
+    # already records 99f91dd227cd as applied and whose hr_employees.status
+    # column already points at the pre-existing public.employeestatus type —
+    # that is left untouched).
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "tenant"."employeestatus" AS ENUM ('ACTIVE', 'ON_LEAVE', 'TERMINATED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+
     op.create_table('hr_employees',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -114,11 +150,24 @@ def upgrade() -> None:
     sa.Column('national_id', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('base_salary', sa.Numeric(precision=18, scale=4), nullable=False),
     sa.Column('hire_date', sa.Date(), nullable=False),
-    sa.Column('status', sa.Enum('ACTIVE', 'ON_LEAVE', 'TERMINATED', name='employeestatus'), nullable=False),
+    sa.Column('status', postgresql.ENUM('ACTIVE', 'ON_LEAVE', 'TERMINATED', name='employeestatus', schema='tenant', create_type=False), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     schema='tenant'
     )
     op.create_index(op.f('ix_tenant_hr_employees_national_id'), 'hr_employees', ['national_id'], unique=True, schema='tenant')
+    # Create the shiftstatus enum type BEFORE the table that references it.
+    # The schema-translation listener in env.py rewrites "tenant". → real schema.
+    # Wrapped in the same idempotent DO $$ / duplicate_object guard as
+    # employeestatus above, so a partially-applied prior run of this
+    # revision (e.g. one that got as far as creating shiftstatus but then
+    # failed on employeestatus) can be safely re-run to completion.
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "tenant"."shiftstatus" AS ENUM ('OPEN', 'CLOSED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+
     op.create_table('pos_cash_shifts',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -128,7 +177,7 @@ def upgrade() -> None:
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('opened_by', sa.Uuid(), nullable=False),
     sa.Column('closed_by', sa.Uuid(), nullable=True),
-    sa.Column('status', postgresql.ENUM('OPEN', 'CLOSED', name='shiftstatus', create_type=False), nullable=False),
+    sa.Column('status', postgresql.ENUM('OPEN', 'CLOSED', name='shiftstatus', schema='tenant', create_type=False), nullable=False),
     sa.Column('opening_balance', sa.Numeric(precision=18, scale=4), nullable=False),
     sa.Column('closing_balance', sa.Numeric(precision=18, scale=4), nullable=True),
     sa.Column('expected_balance', sa.Numeric(precision=18, scale=4), nullable=True),

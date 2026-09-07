@@ -37,6 +37,23 @@ class PurchaseOrderNotFoundError(Exception):
         super().__init__(f"PurchaseOrder not found: {po_id}")
 
 
+class SupplierNotFoundError(Exception):
+    """
+    Raised when a PurchaseOrder/GoodsReceipt/VendorBill references a
+    `supplier_id` that doesn't resolve to a SUPPLIER-type Contact in the
+    tenant's `contacts` table. `supplier_id` is a bare UUID column (no DB
+    foreign key to `tenant.contacts.id`), so this validated lookup is the
+    referential-integrity check that would otherwise be missing entirely.
+    """
+
+    def __init__(self, supplier_id: UUID | str):
+        self.supplier_id = supplier_id
+        super().__init__(
+            f"Supplier '{supplier_id}' not found — no contact with this ID and "
+            f"contact_type='supplier' exists in this tenant."
+        )
+
+
 class PurchaseOrderLineNotFoundError(Exception):
     """Raised when a PurchaseOrderLine cannot be found."""
 

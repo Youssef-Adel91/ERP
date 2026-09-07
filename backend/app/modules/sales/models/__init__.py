@@ -14,6 +14,11 @@ from app.modules.sales.models.recurring import (
     RecurringStatus,
     RecurringFrequency,
 )
+from app.modules.sales.models.payments import (
+    SalesPayment,
+    SalesPaymentAllocation,
+    SalesPaymentStatus,
+)
 
 __all__ = [
     "SalesOrder",
@@ -28,4 +33,7 @@ __all__ = [
     "RecurringInvoiceProfile",
     "RecurringStatus",
     "RecurringFrequency",
+    "SalesPayment",
+    "SalesPaymentAllocation",
+    "SalesPaymentStatus",
 ]

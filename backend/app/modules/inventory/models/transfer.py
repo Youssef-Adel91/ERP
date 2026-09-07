@@ -3,6 +3,7 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, Column, Numeric, text
 from sqlmodel import Field, SQLModel
 
@@ -33,7 +34,21 @@ class StockTransfer(SQLModel, table=True):
     destination_warehouse_id: UUID = Field(index=True)
     transit_warehouse_id: UUID = Field(index=True)
     
-    status: TransferStatus = Field(default=TransferStatus.DRAFT, index=True)
+    # NOTE: must be explicitly schema-qualified via sa.Enum(..., schema="tenant"),
+    # matching JournalEntryStatus/AccountType/ShiftStatus/etc. elsewhere in the
+    # codebase. A bare `sa.Enum(TransferStatus)` here casts parameters as
+    # unqualified `$N::transferstatus`, which does not resolve since the type
+    # only exists inside each tenant schema (created by
+    # f93809b48226_phase_1b_step_6_complete_inventory.py). create_type=False
+    # because the enum type is already created by that migration.
+    status: TransferStatus = Field(
+        default=TransferStatus.DRAFT,
+        sa_column=Column(
+            sa.Enum(TransferStatus, name="transferstatus", schema="tenant", create_type=False),
+            nullable=False,
+            index=True,
+        ),
+    )
     
     dispatched_at: datetime | None = Field(default=None)
     received_at: datetime | None = Field(default=None)

@@ -11,7 +11,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_tenant_db
@@ -51,6 +51,30 @@ async def create_contact(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> ContactResponse:
     """Insert a Contact row in the tenant schema and return it."""
+    # Duplicate check: reject creating a second contact that shares an
+    # email or phone number with an existing one in this tenant, rather
+    # than silently allowing the same customer/supplier to be registered
+    # twice as unrelated records (same pattern as the SKU-uniqueness check
+    # in app.modules.inventory.api.items.create_item).
+    dup_filters = []
+    if data.email:
+        dup_filters.append(Contact.email == data.email)
+    if data.phone:
+        dup_filters.append(Contact.phone == data.phone)
+
+    if dup_filters:
+        existing = await db.execute(select(Contact).where(or_(*dup_filters)))
+        duplicate = existing.scalars().first()
+        if duplicate:
+            conflicting_field = "email" if data.email and duplicate.email == data.email else "phone"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"A contact with this {conflicting_field} already exists "
+                    f"(id={duplicate.id}, name='{duplicate.name}')."
+                ),
+            )
+
     contact = Contact(
         contact_type=data.contact_type,
         name=data.name,

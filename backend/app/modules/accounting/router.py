@@ -6,25 +6,36 @@ sets `search_path = tenant_{id}` so all queries hit the correct schema.
 """
 
 import logging
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_tenant_db
+from app.core.security.security import require_role
 from app.modules.accounting import service
 from app.modules.accounting.models import AccountType, JournalEntryStatus
+from app.modules.accounting.reports import generate_trial_balance
 from app.modules.accounting.schemas import (
     AccountBalanceResponse,
     AccountCreateRequest,
     AccountResponse,
     JournalEntryCreateRequest,
     JournalEntryResponse,
+    TrialBalanceRow,
 )
 from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# All accounting data (Chart of Accounts, account balances, journal entries)
+# is sensitive financial information. Restrict every endpoint in this router
+# to roles that legitimately need it — previously any authenticated user of
+# any role (e.g. SALES, STAFF) could read/write the general ledger.
+_FINANCE_ROLES = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.ACCOUNTING))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -37,6 +48,7 @@ router = APIRouter()
     response_model=list[AccountResponse],
     summary="List Chart of Accounts",
     tags=["Accounting - Accounts"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def list_accounts(
     current_user: CurrentUser,
@@ -61,6 +73,7 @@ async def list_accounts(
     status_code=status.HTTP_201_CREATED,
     summary="Add a new account to Chart of Accounts",
     tags=["Accounting - Accounts"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def create_account(
     data: AccountCreateRequest,
@@ -79,6 +92,7 @@ async def create_account(
     response_model=AccountBalanceResponse,
     summary="Get running balance for an account (POSTED entries only)",
     tags=["Accounting - Accounts"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def get_account_balance(
     account_code: str,
@@ -114,6 +128,7 @@ async def get_account_balance(
         "will appear here with `source_type='invoice'`."
     ),
     tags=["Accounting - Journal Entries"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def list_journal_entries(
     current_user: CurrentUser,
@@ -142,6 +157,7 @@ async def list_journal_entries(
         "The entry is created as `DRAFT`. Call `POST ./{id}/post` to finalize it."
     ),
     tags=["Accounting - Journal Entries"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def create_journal_entry(
     data: JournalEntryCreateRequest,
@@ -168,6 +184,7 @@ async def create_journal_entry(
         "To correct a posted entry, use `POST ./{id}/reverse` instead."
     ),
     tags=["Accounting - Journal Entries"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def post_journal_entry(
     entry_id: UUID,
@@ -194,6 +211,7 @@ async def post_journal_entry(
         "Use this to correct accounting errors without modifying posted history."
     ),
     tags=["Accounting - Journal Entries"],
+    dependencies=[_FINANCE_ROLES],
 )
 async def create_reversing_entry(
     entry_id: UUID,
@@ -207,3 +225,33 @@ async def create_reversing_entry(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+# ══════════════════════════════════════════════════════════════════
+# REPORTS
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/reports/trial-balance",
+    response_model=list[TrialBalanceRow],
+    summary="Trial Balance report — verifies Σdebits == Σcredits across the GL",
+    description=(
+        "Aggregates every **POSTED** journal entry line by GL account, computes "
+        "each account's net balance by its normal balance direction, and appends "
+        "a final `is_grand_total=True` row proving Total Debits == Total Credits.\n\n"
+        "`as_of_date` restricts to entries on or before that date (default: all "
+        "posted history). `include_zero_balances=false` drops accounts with no "
+        "activity."
+    ),
+    tags=["Accounting - Reports"],
+    dependencies=[_FINANCE_ROLES],
+)
+async def get_trial_balance(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+    as_of_date: date | None = Query(default=None),
+    include_zero_balances: bool = Query(default=True),
+) -> list[TrialBalanceRow]:
+    rows = await generate_trial_balance(db, as_of_date=as_of_date, include_zero_balances=include_zero_balances)
+    return [TrialBalanceRow.model_validate(r) for r in rows]

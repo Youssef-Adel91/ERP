@@ -34,6 +34,9 @@ from app.modules.finance.models.settlements import (
     CarrierReceivableSnapshot,
     CarrierSettlement,
     CarrierSettlementState,
+    SettlementLine,
+    SettlementLineExceptionType,
+    SettlementLineMatchState,
 )
 from app.modules.finance.services.matching import (
     SettlementFileParseError,
@@ -59,6 +62,31 @@ class SettlementMatchJsonRequest(BaseModel):
     date_window_days: int = Field(default=7)
 
 
+class SettlementLineOut(BaseModel):
+    """Read-only projection of SettlementLine for the detail/review endpoint."""
+
+    id: UUID
+    awb_number: str
+    cod_collected: Decimal
+    shipping_fee: Decimal
+    cod_fee: Decimal
+    return_fee: Decimal
+    net_remitted: Decimal
+    match_state: SettlementLineMatchState
+    exception_type: SettlementLineExceptionType
+    shipment_id: UUID | None
+    notes: str
+
+    model_config = {"from_attributes": True}
+
+
+class SettlementDetailOut(BaseModel):
+    """Settlement header plus its line items, for the review-before-commit UI."""
+
+    settlement: CarrierSettlement
+    lines: list[SettlementLineOut]
+
+
 @router.get(
     "",
     response_model=list[CarrierSettlement],
@@ -81,6 +109,38 @@ async def list_settlements(
     q = q.order_by(CarrierSettlement.created_at.desc()).limit(limit).offset(offset)
     result = await session.execute(q)
     return list(result.scalars().all())
+
+
+@router.get(
+    "/{settlement_id}",
+    response_model=SettlementDetailOut,
+    summary="Get Carrier Settlement Detail with Line Items (FR-771, FR-774)",
+)
+async def get_settlement_detail(
+    settlement_id: UUID,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+) -> SettlementDetailOut:
+    """
+    Detail view for one settlement, including every matched/unmatched/disputed
+    line item — needed by the frontend review screen before a settlement is
+    committed to the GL (a matched/partially_matched settlement should be
+    reviewable line-by-line, not just posted blind from the list view).
+    """
+    settlement = await session.get(CarrierSettlement, settlement_id)
+    if settlement is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Settlement with ID '{settlement_id}' not found.",
+        )
+    stmt = (
+        select(SettlementLine)
+        .where(SettlementLine.settlement_id == settlement_id)
+        .order_by(SettlementLine.awb_number)
+    )
+    result = await session.execute(stmt)
+    lines = list(result.scalars().all())
+    return SettlementDetailOut(settlement=settlement, lines=lines)
 
 
 @router.post(

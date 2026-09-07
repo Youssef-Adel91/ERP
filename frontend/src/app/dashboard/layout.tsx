@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "@/store/use-app-store";
-import { clearSessionStorage } from "@/lib/api-client";
+import { apiClient, clearSessionStorage } from "@/lib/api-client";
 import {
   LayoutDashboard,
   BookOpenText,
@@ -38,9 +39,38 @@ import {
   Bell,
   Search,
   LogOut,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 
-const navSections = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /** When set, this item is only shown once we know this plugin key is enabled for the tenant. */
+  pluginKey?: string;
+}
+
+interface NavSection {
+  label: string | null;
+  items: NavItem[];
+}
+
+interface PluginEntry {
+  key: string;
+  is_active: boolean;
+}
+
+interface ExpirationAlert {
+  case_id: string;
+  case_title: string | null;
+  field_path: string;
+  expiry_date: string;
+  days_remaining: number;
+  severity: "expired" | "critical" | "warning";
+}
+
+const navSections: NavSection[] = [
   {
     label: null,
     items: [
@@ -79,7 +109,7 @@ const navSections = [
     label: "الموارد البشرية",
     items: [
       { href: "/dashboard/hr", label: "الموارد البشرية", icon: Users },
-      { href: "/dashboard/recruitment", label: "الاستقدام والتوظيف", icon: UserSearch },
+      { href: "/dashboard/recruitment", label: "الاستقدام والتوظيف", icon: UserSearch, pluginKey: "recruitment" },
       { href: "/dashboard/team", label: "فريق العمل", icon: UsersRound },
     ],
   },
@@ -87,9 +117,9 @@ const navSections = [
     label: "القطاعات",
     items: [
       { href: "/dashboard/cases", label: "الحالات والحجوزات", icon: Workflow },
-      { href: "/dashboard/travel", label: "السياحة والسفر", icon: Plane },
-      { href: "/dashboard/hospitality", label: "الغرف والضيافة", icon: BedDouble },
-      { href: "/dashboard/rental", label: "أسطول التأجير", icon: Car },
+      { href: "/dashboard/travel", label: "السياحة والسفر", icon: Plane, pluginKey: "travel" },
+      { href: "/dashboard/hospitality", label: "الغرف والضيافة", icon: BedDouble, pluginKey: "hospitality" },
+      { href: "/dashboard/rental", label: "أسطول التأجير", icon: Car, pluginKey: "rental" },
     ],
   },
   {
@@ -110,6 +140,78 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, clearSession } = useAppStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Which verticals (plugins) are enabled for this tenant — drives which
+  // "القطاعات"/vertical-specific nav items render. Cached for 5 minutes so
+  // the sidebar doesn't refetch on every navigation.
+  const { data: plugins } = useQuery({
+    queryKey: ["enabled-plugins"],
+    queryFn: async () => (await apiClient.get<PluginEntry[]>("/plugins")).data,
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+  });
+  const enabledPluginKeys = useMemo(
+    () => new Set((plugins ?? []).filter((p) => p.is_active).map((p) => p.key)),
+    [plugins]
+  );
+
+  // Same expiration-alerts data source the dashboard's ExpirationAlertsWidget
+  // uses — reused here in compact form for the notification bell dropdown.
+  const { data: alerts, isLoading: alertsLoading } = useQuery({
+    queryKey: ["case-expiration-alerts"],
+    queryFn: async () =>
+      (await apiClient.get<ExpirationAlert[]>("/cases/alerts/expirations", { params: { threshold_days: 60 } })).data,
+    enabled: !!user,
+    refetchInterval: 5 * 60_000,
+  });
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [notifOpen]);
+
+  // Header avatar dropdown — same outside-click pattern as the notification
+  // bell above, plus Escape-to-close since this one holds a logout action.
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setProfileOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [profileOpen]);
+
+  // Until we know which plugins are enabled, hide plugin-gated items rather
+  // than briefly flashing everything (or crashing if the request fails).
+  const visibleNavSections = useMemo(
+    () =>
+      navSections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => !item.pluginKey || enabledPluginKeys.has(item.pluginKey)),
+        }))
+        .filter((section) => section.items.length > 0),
+    [enabledPluginKeys]
+  );
 
   const handleLogout = () => {
     clearSessionStorage();
@@ -175,9 +277,65 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-1">
-            <button className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant">
-              <Bell className="w-5 h-5" />
-            </button>
+            {/* Notification bell — shows expiring passports/visas/documents,
+                reusing the same query as ExpirationAlertsWidget on the dashboard. */}
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => setNotifOpen((v) => !v)}
+                aria-label="التنبيهات"
+                aria-expanded={notifOpen}
+                className="relative p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant"
+              >
+                <Bell className="w-5 h-5" />
+                {!alertsLoading && alerts && alerts.length > 0 && (
+                  <span className="absolute top-1 left-1 min-w-[16px] h-4 px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {alerts.length > 9 ? "9+" : alerts.length}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute left-0 mt-2 w-80 max-h-96 overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-xl shadow-overlay z-50 text-right">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-outline-variant">
+                    <ShieldAlert className="w-4 h-4 text-warning" />
+                    <h3 className="font-headline-sm text-body-md font-bold text-on-surface">تنبيهات انتهاء الصلاحية</h3>
+                  </div>
+                  {alertsLoading ? (
+                    <p className="px-4 py-6 text-body-sm text-on-surface-variant text-center">جاري التحقق...</p>
+                  ) : !alerts || alerts.length === 0 ? (
+                    <p className="px-4 py-6 text-body-sm text-on-surface-variant text-center">لا توجد تنبيهات حالياً.</p>
+                  ) : (
+                    <ul className="divide-y divide-outline-variant/30">
+                      {alerts.slice(0, 8).map((a) => (
+                        <li key={`${a.case_id}:${a.field_path}`}>
+                          <Link
+                            href={`/dashboard/cases/${a.case_id}`}
+                            onClick={() => setNotifOpen(false)}
+                            className="flex items-start gap-2 px-4 py-2.5 hover:bg-surface-container-high transition-colors"
+                          >
+                            <AlertTriangle
+                              className={`w-4 h-4 shrink-0 mt-0.5 ${a.severity === "warning" ? "text-warning" : "text-error"}`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-body-sm font-medium text-on-surface truncate">
+                                {a.case_title ?? "بدون عنوان"} — <span className="text-on-surface-variant">{a.field_path}</span>
+                              </p>
+                              <p className="text-[11px] text-outline font-data-mono" dir="ltr">
+                                {a.expiry_date} ·{" "}
+                                {a.days_remaining < 0
+                                  ? `منتهي منذ ${Math.abs(a.days_remaining)} يوم`
+                                  : `متبقي ${a.days_remaining} يوم`}
+                              </p>
+                            </div>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
             <button className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant">
               <Settings className="w-5 h-5" />
             </button>
@@ -188,13 +346,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <HelpCircle className="w-5 h-5" />
             </a>
-            {/* Avatar */}
-            <div className="h-8 w-8 rounded-full bg-primary-fixed border border-outline-variant flex items-center justify-center font-bold text-on-primary-fixed text-body-sm overflow-hidden shrink-0 mr-1">
-              {user?.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatar} alt={user?.name ?? ""} className="w-full h-full object-cover" />
-              ) : (
-                user?.name?.[0] ?? "?"
+            {/* Avatar + dropdown menu */}
+            <div className="relative mr-1" ref={profileRef}>
+              <button
+                type="button"
+                onClick={() => setProfileOpen((v) => !v)}
+                aria-label="قائمة الحساب"
+                aria-haspopup="menu"
+                aria-expanded={profileOpen}
+                className="h-8 w-8 rounded-full bg-primary-fixed border border-outline-variant flex items-center justify-center font-bold text-on-primary-fixed text-body-sm overflow-hidden shrink-0"
+              >
+                {user?.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.avatar} alt={user?.name ?? ""} className="w-full h-full object-cover" />
+                ) : (
+                  user?.name?.[0] ?? "?"
+                )}
+              </button>
+
+              {profileOpen && (
+                <div
+                  role="menu"
+                  aria-label="قائمة الحساب"
+                  className="absolute left-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-overlay z-50 text-right overflow-hidden"
+                >
+                  {user && (
+                    <div className="px-4 py-3 border-b border-outline-variant">
+                      <p className="font-body-md text-body-md font-semibold text-on-surface truncate">{user.name}</p>
+                      <p className="font-body-sm text-body-sm text-outline truncate">{user.role}</p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      handleLogout();
+                    }}
+                    className="flex flex-row-reverse w-full items-center gap-2 px-4 py-2.5 text-error hover:bg-error-container/20 transition-all text-body-md"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>تسجيل الخروج</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -257,7 +451,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {navSections.map((section, si) => (
+          {visibleNavSections.map((section, si) => (
             <div key={si} className="mb-2">
               {section.label && (
                 <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-outline">

@@ -46,6 +46,7 @@ class CarrierAccount(TenantBase, table=True):
     Sensitive API keys/secrets are stored by reference in Vault (credentials_ref, webhook_secret_ref).
     """
 
+    __tablename__ = "carrier_account"
     __table_args__ = (
         sa.UniqueConstraint("carrier_code", name="uq_carrier_account_code"),
         {"schema": "tenant"},
@@ -66,6 +67,7 @@ class Shipment(TenantBase, table=True):
         Only setting `return_received_at` via an explicit warehouse physical check-in triggers restock.
     """
 
+    __tablename__ = "shipment"
     __table_args__ = (
         sa.Index("ix_shipment_invoice_id", "invoice_id"),
         sa.Index("ix_shipment_awb", "awb_number"),
@@ -97,6 +99,7 @@ class ShipmentEvent(TenantBase, table=True):
     Audit trail of shipment status changes, mapping raw status to canonical state (FR-753, FR-760).
     """
 
+    __tablename__ = "shipment_event"
     __table_args__ = (
         sa.Index("ix_shipment_event_shipment_id", "shipment_id"),
         {"schema": "tenant"},
@@ -125,6 +128,7 @@ class CarrierWebhookEvent(TenantBase, table=True):
     A unique constraint on `dedupe_key` ensures duplicate webhooks are ignored immediately.
     """
 
+    __tablename__ = "carrier_webhook_event"
     __table_args__ = (
         sa.UniqueConstraint("dedupe_key", name="uq_carrier_webhook_event_dedupe_key"),
         sa.Index("ix_carrier_webhook_dedupe", "dedupe_key"),

@@ -106,11 +106,11 @@ interface CaseDetail {
   history?: CaseHistoryEntry[];
 }
 interface TravelFinancials {
-  buy_price?: number;
-  sell_price?: number;
-  margin?: number;
+  total_buy_price?: number;
+  total_sell_price?: number;
+  total_margin?: number;
   margin_pct?: number;
-  commission?: number;
+  commission_amount?: number;
   currency?: string;
 }
 
@@ -417,10 +417,10 @@ export default function CaseDetailPage() {
                 </div>
                 <h2 className="font-headline-sm text-headline-sm text-on-surface">الملخص المالي</h2>
               </div>
-              <FinancialRow label="سعر الشراء" value={financials.buy_price} currency={financials.currency} />
-              <FinancialRow label="سعر البيع" value={financials.sell_price} currency={financials.currency} />
-              <FinancialRow label="الهامش" value={financials.margin} currency={financials.currency} highlight />
-              <FinancialRow label="العمولة" value={financials.commission} currency={financials.currency} />
+              <FinancialRow label="سعر الشراء" value={financials.total_buy_price} currency={financials.currency} />
+              <FinancialRow label="سعر البيع" value={financials.total_sell_price} currency={financials.currency} />
+              <FinancialRow label="الهامش" value={financials.total_margin} currency={financials.currency} highlight />
+              <FinancialRow label="العمولة" value={financials.commission_amount} currency={financials.currency} />
             </div>
           )}
 

@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
-from app.core.models.mixins import compute_content_hash
+from app.core.models.mixins import DocumentLifecycleMixin, compute_content_hash
 from app.modules.approvals.models.core import (
     ApprovalDecision,
     ApprovalRequest,
@@ -46,6 +46,21 @@ from app.modules.approvals.services.exceptions import (
 from app.modules.system.dependencies import CurrentUser
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
+
+# Document types whose model has adopted DocumentLifecycleMixin (see
+# app/core/models/mixins.py) and therefore has its `state` synced back to
+# APPROVED/DRAFT here when a decision is recorded. A document_type NOT in
+# this map still gets a fully real, audited approve/reject decision — it
+# just has no source-module state of its own to sync (per this module's
+# original "generic requests" design, see this file's module docstring).
+# Registered lazily (inside decide(), not at import time) to avoid a
+# hard import-time dependency from approvals -> purchasing.
+def _resolve_document_model(document_type: str) -> type[DocumentLifecycleMixin] | None:
+    if document_type == "purchase_order":
+        from app.modules.purchasing.models.core import PurchaseOrder
+
+        return PurchaseOrder
+    return None
 
 
 # ── Approval Rules ────────────────────────────────────────────────────────────
@@ -210,7 +225,22 @@ async def decide(
     Approve or reject a pending request. Enforces segregation of duties
     (FR-1206): the person who requested approval can never decide on it,
     regardless of role.
+
+    For document types whose model has adopted `DocumentLifecycleMixin`
+    (currently: `purchase_order`), this also syncs the source document's
+    `state` — APPROVE -> APPROVED, REJECT -> back to DRAFT so it can be
+    edited and resubmitted. Other document types only get the audited
+    decision recorded here, with no source-module state to sync.
     """
+    approval_request = await session.get(ApprovalRequest, id)
+    if not approval_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found.")
+
+    document = None
+    model_cls = _resolve_document_model(approval_request.document_type)
+    if model_cls is not None:
+        document = await session.get(model_cls, approval_request.document_id)
+
     try:
         decision = await decide_approval(
             session=session,
@@ -218,6 +248,7 @@ async def decide(
             decision=data.decision,
             decided_by=current_user.id,
             comment=data.comment,
+            document=document,
         )
         await session.commit()
         return decision

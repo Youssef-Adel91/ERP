@@ -1,7 +1,7 @@
 """
 app/modules/finance/api/cheques.py — Cheques API Routes
 """
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
@@ -44,7 +44,7 @@ class ChequeResponse(BaseModel):
     contact_id: UUID
     invoice_id: Optional[UUID] = None
     transaction_id: Optional[UUID] = None
-    created_at: date | str | None = None
+    created_at: datetime | None = None
     
     model_config = ConfigDict(from_attributes=True)
 

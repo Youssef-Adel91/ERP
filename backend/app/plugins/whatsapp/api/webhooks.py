@@ -84,11 +84,14 @@ async def receive_webhook(request: Request):
 
     body = await request.body()
 
-    if signature:
-        expected_sig = "sha256=" + hmac.new(app_secret.encode(), body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected_sig):
-            logger.warning("WhatsApp webhook signature mismatch")
-            raise HTTPException(status_code=403, detail="Invalid signature")
+    if not signature:
+        logger.warning("WhatsApp webhook rejected: missing X-Hub-Signature-256 header")
+        raise HTTPException(status_code=403, detail="Missing signature")
+
+    expected_sig = "sha256=" + hmac.new(app_secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected_sig):
+        logger.warning("WhatsApp webhook signature mismatch")
+        raise HTTPException(status_code=403, detail="Invalid signature")
 
     try:
         payload = json.loads(body) if body else {}

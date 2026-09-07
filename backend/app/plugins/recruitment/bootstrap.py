@@ -112,10 +112,48 @@ CANDIDATE_DEPLOYMENT_STAGES: list[dict] = [
         },
     },
     {
+        # Wave 2: was entirely missing — a candidate could jump straight from
+        # a signed contract to "deployed" with no record of visa or work
+        # permit status anywhere. Sits between contract signing and travel,
+        # matching the real staffing-agency process (visa/permit must clear
+        # before a flight is booked).
+        "id": "visa_processing",
+        "label": "Visa & Work Permit Processing",
+        "label_ar": "استخراج التأشيرة وتصريح العمل",
+        "order": 5,
+        "is_terminal": False,
+        "allow_rollback": True,  # Can return to contracted if the application is rejected and needs rework
+        "schema": {
+            "type": "object",
+            "required": ["visa_status", "work_permit_status"],
+            "properties": {
+                "visa_status": {
+                    "type": "string",
+                    "enum": ["not_started", "submitted", "under_review", "approved", "rejected"],
+                },
+                "visa_number": {"type": "string", "maxLength": 100},
+                "visa_type": {"type": "string", "maxLength": 100},
+                "visa_submitted_at": {"type": "string", "format": "date"},
+                "visa_issued_at": {"type": "string", "format": "date"},
+                "visa_expiry_date": {"type": "string", "format": "date"},
+                "work_permit_status": {
+                    "type": "string",
+                    "enum": ["not_started", "submitted", "approved", "rejected"],
+                },
+                "work_permit_number": {"type": "string", "maxLength": 100},
+                "work_permit_issued_at": {"type": "string", "format": "date"},
+                "work_permit_expiry_date": {"type": "string", "format": "date"},
+                "issuing_authority": {"type": "string", "maxLength": 255},
+                "rejection_reason": {"type": "string", "maxLength": 1000},
+                "notes": {"type": "string"},
+            },
+        },
+    },
+    {
         "id": "deployed",
         "label": "Deployed / Travelled",
         "label_ar": "تم السفر / النشر",
-        "order": 5,
+        "order": 6,
         "is_terminal": False,
         "schema": {
             "type": "object",
@@ -132,7 +170,7 @@ CANDIDATE_DEPLOYMENT_STAGES: list[dict] = [
         "id": "closed",
         "label": "Closed / Returned",
         "label_ar": "مغلق / عاد",
-        "order": 6,
+        "order": 7,
         "is_terminal": True,
         "terminal_status": "CLOSED",
         "schema": {
@@ -147,7 +185,7 @@ CANDIDATE_DEPLOYMENT_STAGES: list[dict] = [
         "id": "cancelled",
         "label": "Cancelled",
         "label_ar": "ملغي",
-        "order": 7,
+        "order": 8,
         "is_terminal": True,
         "terminal_status": "CANCELLED",
         "allow_rollback": False,
@@ -208,6 +246,18 @@ async def bootstrap_recruitment_case_type(session: AsyncSession) -> CaseType:
     Idempotent: inserts the 'candidate_deployment' CaseType if it does not
     already exist. Called once per tenant during plugin activation.
 
+    Also idempotently *upgrades* a tenant that already provisioned this
+    CaseType before a stage was added to CANDIDATE_DEPLOYMENT_STAGES (e.g.
+    the Wave 2 "visa_processing" stage) — there is no PATCH endpoint for
+    CaseType.stages anywhere (see app/modules/cases/api/case_types.py), so
+    a tenant can never have hand-customized this array; it's always exactly
+    what this module last wrote. Safe to overwrite wholesale once confirmed
+    stale. Stage `order` values are only ever compared relatively (see
+    _validate_transition in app/modules/cases/services/engine.py), so
+    renumbering downstream stages never invalidates a Case already sitting
+    in one of them — only the `id` strings matter for Case.current_stage,
+    and none of those change or get removed.
+
     Returns the existing or newly created CaseType.
     """
     result = await session.execute(
@@ -215,6 +265,12 @@ async def bootstrap_recruitment_case_type(session: AsyncSession) -> CaseType:
     )
     existing = result.scalar_one_or_none()
     if existing:
+        existing_stage_ids = {s.get("id") for s in existing.stages}
+        current_stage_ids = {s["id"] for s in CANDIDATE_DEPLOYMENT_STAGES}
+        if existing_stage_ids != current_stage_ids:
+            existing.stages = CANDIDATE_DEPLOYMENT_STAGES
+            session.add(existing)
+            await session.flush()
         return existing
 
     case_type = CaseType(

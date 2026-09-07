@@ -107,3 +107,25 @@ class JournalEntryResponse(BaseModel):
     lines: list[TransactionLineResponse]
 
     model_config = {"from_attributes": True}
+
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+
+
+class TrialBalanceRow(BaseModel):
+    """One row of the Trial Balance report (see reports/trial_balance.py).
+
+    The final row in the list always has ``is_grand_total=True`` and carries
+    the Σdebits == Σcredits proof in ``is_balanced``; every other row has
+    ``is_balanced=None``.
+    """
+
+    account_id: UUID | None
+    account_code: str
+    account_name: str
+    account_type: str
+    total_debit: Decimal
+    total_credit: Decimal
+    net_balance: Decimal
+    is_grand_total: bool = False
+    is_balanced: bool | None = None

@@ -14,6 +14,7 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
+  BarChart3,
 } from "lucide-react";
 
 type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
@@ -72,6 +73,18 @@ const statusTone: Record<JournalEntryStatus, string> = {
 
 const egp = (value: string | number) => `${Number(value).toLocaleString("ar-EG", { maximumFractionDigits: 0 })} ج.م`;
 
+interface TrialBalanceRow {
+  account_id: string | null;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  total_debit: string | number;
+  total_credit: string | number;
+  net_balance: string | number;
+  is_grand_total: boolean;
+  is_balanced: boolean | null;
+}
+
 const createAccountSchema = z.object({
   code: z.string().min(1, "الكود مطلوب"),
   name: z.string().min(1, "الاسم مطلوب"),
@@ -80,13 +93,45 @@ const createAccountSchema = z.object({
 type CreateAccountForm = z.infer<typeof createAccountSchema>;
 
 export default function AccountingPage() {
-  const [tab, setTab] = useState<"accounts" | "entries">("entries");
+  const [tab, setTab] = useState<"accounts" | "entries" | "reports">("entries");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [postingId, setPostingId] = useState<string | null>(null);
+
+  const [trialBalance, setTrialBalance] = useState<TrialBalanceRow[]>([]);
+  const [tbLoading, setTbLoading] = useState(false);
+  const [tbError, setTbError] = useState("");
+  const [tbAsOfDate, setTbAsOfDate] = useState("");
+  const [tbIncludeZero, setTbIncludeZero] = useState(false);
+  const [tbLoaded, setTbLoaded] = useState(false);
+
+  const fetchTrialBalance = useCallback(async () => {
+    setTbLoading(true);
+    setTbError("");
+    try {
+      const res = await apiClient.get<TrialBalanceRow[]>("/accounting/reports/trial-balance", {
+        params: {
+          as_of_date: tbAsOfDate || undefined,
+          include_zero_balances: tbIncludeZero,
+        },
+      });
+      setTrialBalance(res.data);
+      setTbLoaded(true);
+    } catch (err) {
+      setTbError(getApiErrorMessage(err, "تعذر تحميل ميزان المراجعة."));
+    } finally {
+      setTbLoading(false);
+    }
+  }, [tbAsOfDate, tbIncludeZero]);
+
+  useEffect(() => {
+    if (tab === "reports" && !tbLoaded) {
+      fetchTrialBalance();
+    }
+  }, [tab, tbLoaded, fetchTrialBalance]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -160,6 +205,15 @@ export default function AccountingPage() {
           <BookOpenText className="w-4 h-4" />
           شجرة الحسابات
         </button>
+        <button
+          onClick={() => setTab("reports")}
+          className={`flex items-center gap-2 px-4 py-3 text-body-md font-semibold border-b-2 transition-colors ${
+            tab === "reports" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          ميزان المراجعة
+        </button>
       </div>
 
       {error && (
@@ -202,6 +256,98 @@ export default function AccountingPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      ) : tab === "reports" ? (
+        <div className="space-y-4">
+          <div className="glass-card rounded-xl p-card-padding flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <label className="text-body-sm font-semibold text-on-surface-variant">حتى تاريخ</label>
+              <input
+                type="date"
+                value={tbAsOfDate}
+                onChange={(e) => { setTbAsOfDate(e.target.value); setTbLoaded(false); }}
+                className="h-11 rounded-lg border border-outline-variant bg-surface-container-low px-4 text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                dir="ltr"
+              />
+            </div>
+            <label className="flex items-center gap-2 h-11 text-body-sm font-medium text-on-surface-variant cursor-pointer">
+              <input
+                type="checkbox"
+                checked={tbIncludeZero}
+                onChange={(e) => { setTbIncludeZero(e.target.checked); setTbLoaded(false); }}
+                className="w-4 h-4 accent-primary"
+              />
+              عرض الحسابات بدون رصيد
+            </label>
+            <button
+              onClick={() => { setTbLoaded(false); fetchTrialBalance(); }}
+              disabled={tbLoading}
+              className="flex items-center gap-2 h-11 px-5 rounded-lg bg-primary text-on-primary font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70"
+            >
+              {tbLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              تحديث
+            </button>
+          </div>
+
+          {tbError && (
+            <div className="flex items-center gap-2 bg-error-container text-on-error-container p-4 rounded-lg text-body-sm font-medium border border-error">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {tbError}
+            </div>
+          )}
+
+          {tbLoading ? (
+            <div className="flex items-center justify-center py-24 text-on-surface-variant gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              جاري التحميل...
+            </div>
+          ) : trialBalance.length === 0 ? (
+            <div className="glass-card rounded-xl flex flex-col items-center justify-center py-16 text-on-surface-variant gap-2">
+              <BarChart3 className="w-8 h-8 text-outline-variant" />
+              <p className="text-body-md">لا توجد بيانات لعرضها.</p>
+            </div>
+          ) : (
+            <div className="glass-card rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right">
+                  <thead className="bg-surface-container-low text-outline text-body-sm font-bold border-b border-outline-variant">
+                    <tr>
+                      <th className="px-6 py-4">الكود</th>
+                      <th className="px-6 py-4">اسم الحساب</th>
+                      <th className="px-6 py-4">النوع</th>
+                      <th className="px-6 py-4">مدين</th>
+                      <th className="px-6 py-4">دائن</th>
+                      <th className="px-6 py-4">الرصيد الصافي</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/30 text-body-md">
+                    {trialBalance.map((row, i) => (
+                      <tr
+                        key={row.account_id ?? `grand-total-${i}`}
+                        className={row.is_grand_total ? "bg-surface-container-low font-bold" : "hover:bg-surface-container-lowest transition-colors"}
+                      >
+                        <td className="px-6 py-4 font-data-mono" dir="ltr">{row.account_code}</td>
+                        <td className="px-6 py-4 font-medium">
+                          {row.account_name}
+                          {row.is_grand_total && (
+                            <span className={`mr-2 px-2 py-1 rounded text-[11px] font-bold ${row.is_balanced ? "bg-secondary-container/30 text-secondary" : "bg-error-container/40 text-error"}`}>
+                              {row.is_balanced ? "متوازن" : "غير متوازن"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-on-surface-variant">
+                          {row.is_grand_total ? "—" : (accountTypeLabel[row.account_type as AccountType] ?? row.account_type)}
+                        </td>
+                        <td className="px-6 py-4 font-data-mono" dir="ltr">{egp(row.total_debit)}</td>
+                        <td className="px-6 py-4 font-data-mono" dir="ltr">{egp(row.total_credit)}</td>
+                        <td className="px-6 py-4 font-data-mono" dir="ltr">{egp(row.net_balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

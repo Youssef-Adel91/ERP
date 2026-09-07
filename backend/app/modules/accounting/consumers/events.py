@@ -351,6 +351,111 @@ async def process_stock_take_posted(
     return entry
 
 
+# ── 4. sales.payment_received ─────────────────────────────────────────────────
+
+
+async def process_payment_received(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    event_id: str | None = None,
+) -> JournalEntry | None:
+    """
+    Process sales.payment_received event (Wave 3 item 1 — customer payments)
+    and generate a balanced JournalEntry clearing the receivable:
+      DR  Cash / Bank Account   (amount)   ← Asset increases
+      CR  Accounts Receivable   (amount)   ← Receivable cleared
+    """
+    payment_id_str = payload.get("payment_id") or payload.get("id")
+    if not payment_id_str:
+        raise ValueError("sales.payment_received payload missing 'payment_id' or 'id'")
+
+    payment_id = UUID(str(payment_id_str))
+    payment_number = str(payload.get("payment_number", f"PAY-{payment_id_str[:8]}"))
+    reference = f"RCPT-{payment_number}"
+
+    existing_entry = await _is_already_journaled(session, reference_id=payment_id, reference=reference)
+    if existing_entry is not None:
+        logger.info(
+            "Idempotency check: JournalEntry already exists for customer payment '%s' (entry_id=%s). Skipping.",
+            payment_number,
+            existing_entry.id,
+        )
+        return existing_entry
+
+    amount = abs(Decimal(str(payload.get("amount", "0"))))
+    if amount <= Decimal("0"):
+        logger.warning("Customer payment '%s' has zero amount; skipping journal creation.", payment_number)
+        return None
+
+    # Prefer the payment's own treasury_id (a real tenant.accounts.id) when
+    # given; otherwise fall back to the tenant's default Cash & Banks
+    # mapping — same fallback pattern purchase.payment_made uses.
+    from app.modules.accounting.models.core import Account
+
+    cash_id = None
+    treasury_id_str = payload.get("treasury_id")
+    if treasury_id_str:
+        try:
+            acct_res = await session.execute(select(Account).where(Account.id == UUID(str(treasury_id_str))))
+            acct = acct_res.scalar_one_or_none()
+            if acct:
+                cash_id = acct.id
+        except (ValueError, Exception):
+            cash_id = None
+    if cash_id is None:
+        cash_id = await get_default_account_id(session, AccountMappingKey.CASH_AND_BANKS)
+
+    ar_id = await get_default_account_id(session, AccountMappingKey.ACCOUNTS_RECEIVABLE)
+
+    lines = [
+        {
+            "account_id": cash_id,
+            "debit": amount,
+            "credit": Decimal("0.0000"),
+            "description": f"Cash/Bank received — {payment_number}",
+        },
+        {
+            "account_id": ar_id,
+            "debit": Decimal("0.0000"),
+            "credit": amount,
+            "description": f"Accounts Receivable cleared — {payment_number}",
+        },
+    ]
+
+    entry = await create_journal_entry(
+        session=session,
+        description=f"Customer Payment {payment_number}",
+        entry_date=None,
+        lines=lines,
+        reference_id=payment_id,
+        reference=reference,
+        source_type="sales.payment",
+        source_id=payment_id,
+        status=JournalEntryStatus.POSTED,
+    )
+    logger.info(
+        "✅ Generated GL JournalEntry id=%s for sales.payment_received (%s) | DR Cash=%s, CR AR=%s",
+        entry.id,
+        payment_number,
+        amount,
+        amount,
+    )
+    return entry
+
+
+@event_bus.subscribe("sales.payment_received")
+async def handle_payment_received_sales(
+    event: DomainEvent,
+    session: AsyncSession | None = None,
+) -> JournalEntry | None:
+    """EventBus subscriber for sales.payment_received (customer payments)."""
+    if session is not None:
+        return await process_payment_received(session, event.payload, str(event.event_id))
+
+    async with tenant_session(event.tenant_id) as sess:
+        return await process_payment_received(sess, event.payload, str(event.event_id))
+
+
 @event_bus.subscribe("inventory.stock_take_posted")
 async def handle_stock_take_posted(
     event: DomainEvent,

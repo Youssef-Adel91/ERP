@@ -12,14 +12,20 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.db.database import get_tenant_db
-from app.modules.purchasing.exceptions import InvalidPOStateError, PurchaseOrderNotFoundError
+from app.core.db.database import get_redis, get_tenant_db
+from app.core.idempotency import IdempotencyKey, get_cached_resource_id, store_idempotent_result
+from app.modules.purchasing.exceptions import (
+    InvalidPOStateError,
+    PurchaseOrderNotFoundError,
+    SupplierNotFoundError,
+)
 from app.modules.purchasing.models.core import PurchaseOrder, PurchaseOrderStatus
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.system.dependencies import CurrentUser
@@ -57,7 +63,23 @@ async def create_order(
     data: PurchaseOrderCreateRequest,
     current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
+    redis: aioredis.Redis = Depends(get_redis),
+    idempotency_key: str | None = IdempotencyKey,
 ) -> PurchaseOrder:
+    # Idempotency: a client-supplied Idempotency-Key header lets a retried
+    # (e.g. network-retried or double-clicked) request return the PO
+    # already created by the first attempt instead of creating a duplicate.
+    cached_id = await get_cached_resource_id(
+        redis,
+        tenant_id=current_user.tenant_id,
+        endpoint="purchasing.orders.create",
+        idempotency_key=idempotency_key,
+    )
+    if cached_id is not None:
+        existing = await session.get(PurchaseOrder, cached_id)
+        if existing is not None:
+            return existing
+
     lines_data = [line.model_dump(exclude_none=True) for line in data.lines]
     try:
         po = await create_purchase_order(
@@ -73,7 +95,17 @@ async def create_order(
             po_number=data.po_number,
         )
         await session.commit()
+        await store_idempotent_result(
+            redis,
+            tenant_id=current_user.tenant_id,
+            endpoint="purchasing.orders.create",
+            idempotency_key=idempotency_key,
+            resource_id=po.id,
+        )
         return po
+    except SupplierNotFoundError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (KeyError, ValueError) as exc:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
@@ -126,6 +158,15 @@ async def get_order(
     "/{po_id}/confirm",
     response_model=PurchaseOrder,
     summary="Confirm a purchase order (DRAFT/CONFIRMED -> CONFIRMED, state -> APPROVED)",
+    description=(
+        "Confirms the PO — unless an active Approval Rule matches it (e.g. "
+        "total_amount over a configured threshold), in which case this call "
+        "instead submits it for approval (`state` -> `PENDING_APPROVAL`) and "
+        "returns without confirming. Call this endpoint again after the "
+        "request is approved via `POST /approvals/requests/{id}/decide` to "
+        "actually confirm it. Tenants with no configured Approval Rules for "
+        "`purchase_order` are unaffected — this always confirms immediately."
+    ),
 )
 async def confirm_order(
     po_id: UUID,
@@ -133,7 +174,7 @@ async def confirm_order(
     session: AsyncSession = Depends(get_tenant_db),
 ) -> PurchaseOrder:
     try:
-        po = await confirm_purchase_order(session=session, po_id=po_id)
+        po = await confirm_purchase_order(session=session, po_id=po_id, requested_by=current_user.id)
         await session.commit()
         return po
     except PurchaseOrderNotFoundError as exc:

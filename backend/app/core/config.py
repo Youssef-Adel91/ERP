@@ -12,6 +12,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_SECRET_KEY = "CHANGE-ME-IN-PRODUCTION-use-openssl-rand-hex-64"
+_DEFAULT_TRUST_PEPPER = "CHANGE-ME-IN-PRODUCTION-use-openssl-rand-hex-64"
 
 
 class Settings(BaseSettings):
@@ -44,6 +45,23 @@ class Settings(BaseSettings):
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # Password-reset tokens (Redis-backed, single-use — see
+    # app/core/security/security.py::create_password_reset_token). Kept
+    # short-lived by design: a forgot-password email sitting unused in an
+    # inbox for days is a bigger risk than a legitimate user occasionally
+    # needing to re-request the link.
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    # Trust Network HMAC pepper (app.modules.trust.services.hashing).
+    # Application-wide secret mixed into every phone-number hash before it
+    # is persisted, on top of the fact that HMAC-SHA256 already keys the
+    # hash — without a real secret here, anyone who reads this source tree
+    # can compute the same phone hashes the Trust Network stores, defeating
+    # the whole point of hashing instead of storing plaintext. Same
+    # generate-and-set discipline as SECRET_KEY above.
+    TRUST_PEPPER: str = Field(
+        default=_DEFAULT_TRUST_PEPPER,
+        min_length=32,
+    )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     CORS_ORIGINS: list[str] = [
@@ -129,11 +147,25 @@ class Settings(BaseSettings):
                 "one with: python -c \"import secrets; print(secrets.token_hex(64))\" "
                 "and set it via the SECRET_KEY environment variable."
             )
+        if self.TRUST_PEPPER == _DEFAULT_TRUST_PEPPER:
+            errors.append(
+                "TRUST_PEPPER is still the placeholder default. Every Trust "
+                "Network phone hash would be computable by anyone who has "
+                "read this file. Generate one with: python -c \"import secrets; "
+                "print(secrets.token_hex(64))\" and set it via the TRUST_PEPPER "
+                "environment variable."
+            )
         if all(origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1") for origin in self.CORS_ORIGINS):
             errors.append(
                 "CORS_ORIGINS is still the default localhost-only dev list. Set "
                 "the CORS_ORIGINS environment variable to your real frontend "
                 "origin(s) (comma-separated), e.g. https://app.yourdomain.com."
+            )
+        if self.DEBUG:
+            errors.append(
+                "DEBUG is still True. Running with debug mode on in production "
+                "leaks stack traces and internal state to clients. Set the "
+                "DEBUG environment variable to false."
             )
         if errors:
             raise ValueError(

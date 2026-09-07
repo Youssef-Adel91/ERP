@@ -38,11 +38,11 @@ import app.modules.contacts.models
 import app.modules.core.models
 import app.modules.inventory.models  # noqa: F401
 import app.modules.sales.models  # noqa: F401
-import app.plugins.inventory.models  # noqa: F401
 import app.modules.eta.models  # noqa: F401
 import app.modules.cases.models.core  # noqa: F401
 import app.modules.cases.models.vendor  # noqa: F401
 import app.modules.hr.models.core  # noqa: F401
+import app.modules.logistics.models  # noqa: F401
 import app.modules.pos.models  # noqa: F401
 import app.modules.purchasing.models  # noqa: F401
 import app.plugins.travel.models  # noqa: F401

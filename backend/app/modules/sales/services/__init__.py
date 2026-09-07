@@ -6,6 +6,11 @@ from app.modules.sales.services.returns import (
     post_credit_note,
     process_sales_return,
 )
+from app.modules.sales.services.payments import (
+    allocate_sales_payment,
+    create_sales_payment,
+    post_sales_payment,
+)
 
 __all__ = [
     "confirm_sales_order",
@@ -17,4 +22,7 @@ __all__ = [
     "create_sales_return",
     "process_sales_return",
     "post_credit_note",
+    "create_sales_payment",
+    "allocate_sales_payment",
+    "post_sales_payment",
 ]

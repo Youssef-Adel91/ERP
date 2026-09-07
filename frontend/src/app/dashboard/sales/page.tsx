@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
-import { ReceiptText, Plus, Trash2, Loader2, AlertCircle, X, CheckCircle2, Landmark, Truck, ExternalLink } from "lucide-react";
+import { ReceiptText, Plus, Trash2, Loader2, AlertCircle, X, CheckCircle2, Landmark, Truck, ExternalLink, Wallet, Undo2, FileDown } from "lucide-react";
 
 /**
  * The dedicated Sales page — didn't exist before. Ad-hoc invoicing used to
@@ -83,6 +83,22 @@ const statusTone: Record<SalesInvoiceStatus, string> = {
   PAID: "bg-success-bg text-success",
   CANCELLED: "bg-error-container text-on-error-container",
 };
+
+interface SalesInvoiceLine {
+  id: string;
+  item_id: string;
+  variant_id: string | null;
+  uom_id: string | null;
+  qty: string | number;
+  unit_price: string | number;
+  line_total: string | number;
+  tax_rate: string | number;
+  tax_amount: string | number;
+}
+interface SalesInvoiceDetail extends SalesInvoice {
+  lines: SalesInvoiceLine[];
+}
+interface Warehouse { id: string; code: string; name: string; }
 
 interface Shipment {
   id: string;
@@ -171,6 +187,11 @@ export default function SalesPage() {
   // instead of throwing on a non-null assertion.
   const shipInvoice = invoices?.find((i) => i.id === shipInvoiceId);
 
+  const [payInvoiceId, setPayInvoiceId] = useState<string | null>(null);
+  const payInvoice = invoices?.find((i) => i.id === payInvoiceId);
+  const [returnInvoiceId, setReturnInvoiceId] = useState<string | null>(null);
+  const returnInvoice = invoices?.find((i) => i.id === returnInvoiceId);
+
   const submitEtaMutation = useMutation({
     mutationFn: async (invoiceId: string) => {
       const res = await apiClient.post<EtaDocument>(`/eta/submissions/invoice/${invoiceId}`);
@@ -184,6 +205,31 @@ export default function SalesPage() {
       setEtaError(pickDetail(err, "تعذر إرسال الفاتورة لمنظومة الفاتورة الإلكترونية."));
     },
     onSettled: () => setEtaSubmittingId(null),
+  });
+
+  // PDF download — mirrors the cases module's itinerary.pdf download
+  // pattern (blob response, synthetic <a download> click). Available
+  // regardless of invoice status (draft invoices can be previewed too).
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState("");
+  const pdfMutation = useMutation({
+    mutationFn: async (invoice: SalesInvoice) => {
+      const res = await apiClient.get(`/sales/invoices/${invoice.id}/pdf`, { responseType: "blob" });
+      return { invoice, blob: res.data as Blob };
+    },
+    onMutate: (invoice) => { setPdfError(""); setPdfDownloadingId(invoice.id); },
+    onSuccess: ({ invoice, blob }) => {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `invoice-${invoice.invoice_number}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    },
+    onError: (err: AxiosError<{ detail?: string }>) => setPdfError(pickDetail(err, "تعذر تحميل ملف PDF للفاتورة.")),
+    onSettled: () => setPdfDownloadingId(null),
   });
 
   return (
@@ -208,6 +254,11 @@ export default function SalesPage() {
       {etaError && (
         <div className="flex items-center gap-2 bg-error-container text-on-error-container p-4 rounded-lg text-body-sm font-medium border border-error">
           <AlertCircle className="w-4 h-4 shrink-0" /> {etaError}
+        </div>
+      )}
+      {pdfError && (
+        <div className="flex items-center gap-2 bg-error-container text-on-error-container p-4 rounded-lg text-body-sm font-medium border border-error">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {pdfError}
         </div>
       )}
 
@@ -290,6 +341,13 @@ export default function SalesPage() {
                       <td className="px-6 py-4 font-data-mono font-bold" dir="ltr">{egp(inv.grand_total)}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => pdfMutation.mutate(inv)}
+                            disabled={pdfDownloadingId === inv.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface-variant font-semibold text-body-sm hover:opacity-80 transition-opacity disabled:opacity-50"
+                          >
+                            {pdfDownloadingId === inv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF
+                          </button>
                           {inv.status === "DRAFT" && (
                             <button onClick={() => postMutation.mutate(inv.id)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-success-bg text-success font-semibold text-body-sm hover:opacity-80 transition-opacity disabled:opacity-50">
                               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} ترحيل
@@ -311,6 +369,22 @@ export default function SalesPage() {
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tertiary-container/20 text-tertiary font-semibold text-body-sm hover:opacity-80 transition-opacity disabled:opacity-50"
                             >
                               {etaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Landmark className="w-3.5 h-3.5" />} إعادة المحاولة
+                            </button>
+                          )}
+                          {inv.status === "POSTED" && (
+                            <button
+                              onClick={() => setPayInvoiceId(inv.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-success-bg text-success font-semibold text-body-sm hover:opacity-80 transition-opacity"
+                            >
+                              <Wallet className="w-3.5 h-3.5" /> تحصيل دفعة
+                            </button>
+                          )}
+                          {(inv.status === "POSTED" || inv.status === "PAID") && (
+                            <button
+                              onClick={() => setReturnInvoiceId(inv.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning-bg text-warning font-semibold text-body-sm hover:opacity-80 transition-opacity"
+                            >
+                              <Undo2 className="w-3.5 h-3.5" /> مرتجع
                             </button>
                           )}
                         </div>
@@ -340,6 +414,28 @@ export default function SalesPage() {
           onShipped={() => {
             setShipInvoiceId(null);
             queryClient.invalidateQueries({ queryKey: ["shipments", "for-sales"] });
+          }}
+        />
+      )}
+
+      {payInvoiceId && payInvoice && (
+        <PayInvoiceModal
+          invoice={payInvoice}
+          onClose={() => setPayInvoiceId(null)}
+          onPaid={() => {
+            setPayInvoiceId(null);
+            queryClient.invalidateQueries({ queryKey: ["sales-invoices"] });
+          }}
+        />
+      )}
+
+      {returnInvoiceId && returnInvoice && (
+        <ReturnInvoiceModal
+          invoice={returnInvoice}
+          onClose={() => setReturnInvoiceId(null)}
+          onReturned={() => {
+            setReturnInvoiceId(null);
+            queryClient.invalidateQueries({ queryKey: ["sales-invoices"] });
           }}
         />
       )}
@@ -431,6 +527,208 @@ function ShipInvoiceModal({
   );
 }
 
+function PayInvoiceModal({
+  invoice,
+  onClose,
+  onPaid,
+}: {
+  invoice: SalesInvoice;
+  onClose: () => void;
+  onPaid: () => void;
+}) {
+  const [errorMsg, setErrorMsg] = useState("");
+  const [amount, setAmount] = useState<string>(String(invoice.grand_total));
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [reference, setReference] = useState("");
+
+  // Full lifecycle in one submit: create the DRAFT payment, allocate it
+  // against this invoice, then post it — mirrors exactly what was verified
+  // live against the real API (create -> allocate -> post), just collapsed
+  // into a single user action since this modal only ever pays one invoice
+  // in full or in part, never splits across several.
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const paymentNumber = `PAY-${invoice.invoice_number}-${Date.now().toString(36).toUpperCase()}`;
+      const created = await apiClient.post<{ id: string }>("/sales/payments", {
+        contact_id: invoice.contact_id,
+        payment_number: paymentNumber,
+        amount,
+        payment_method: paymentMethod,
+        reference: reference || undefined,
+        currency: invoice.currency,
+      });
+      const paymentId = created.data.id;
+      await apiClient.post(`/sales/payments/${paymentId}/allocate`, {
+        invoice_id: invoice.id,
+        allocated_amount: amount,
+      });
+      await apiClient.post(`/sales/payments/${paymentId}/post`);
+    },
+    onSuccess: onPaid,
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر تسجيل الدفعة.")),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
+      <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">تحصيل دفعة</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-body-sm text-on-surface-variant mb-4">
+          فاتورة <span dir="ltr" className="font-data-mono">{invoice.invoice_number}</span> — إجمالي {egp(invoice.grand_total)}
+        </p>
+        {errorMsg && (
+          <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
+          </div>
+        )}
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-body-sm font-semibold text-on-surface-variant">المبلغ المحصّل</label>
+            <input type="number" step="0.01" dir="ltr" value={amount} onChange={(e) => setAmount(e.target.value)} required className="input-field font-mono" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-body-sm font-semibold text-on-surface-variant">طريقة الدفع</label>
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="input-field">
+              <option value="CASH">نقدًا</option>
+              <option value="BANK_TRANSFER">تحويل بنكي</option>
+              <option value="CARD">بطاقة</option>
+              <option value="CHEQUE">شيك</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-body-sm font-semibold text-on-surface-variant">مرجع (اختياري)</label>
+            <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} className="input-field" placeholder="رقم إيصال، رقم تحويل..." />
+          </div>
+          <button type="submit" disabled={mutation.isPending || !amount || Number(amount) <= 0} className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-primary text-on-primary font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70 mt-2">
+            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />} تسجيل وترحيل الدفعة
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ReturnInvoiceModal({
+  invoice,
+  onClose,
+  onReturned,
+}: {
+  invoice: SalesInvoice;
+  onClose: () => void;
+  onReturned: () => void;
+}) {
+  const [errorMsg, setErrorMsg] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
+  // lineId -> qty to return (string input, empty = not returning this line)
+  const [returnQty, setReturnQty] = useState<Record<string, string>>({});
+
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ["sales-invoice-detail", invoice.id],
+    queryFn: async () => {
+      const res = await apiClient.get<SalesInvoiceDetail>(`/sales/invoices/${invoice.id}`);
+      return res.data;
+    },
+  });
+
+  const { data: warehouses } = useQuery({
+    queryKey: ["warehouses", "for-returns"],
+    queryFn: async () => {
+      const res = await apiClient.get<Warehouse[]>("/inventory/warehouses");
+      return res.data;
+    },
+  });
+
+  const selectedLines = (detail?.lines ?? []).filter((l) => Number(returnQty[l.id]) > 0);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const lines = selectedLines.map((l) => ({
+        original_invoice_line_id: l.id,
+        item_id: l.item_id,
+        variant_id: l.variant_id ?? undefined,
+        uom_id: l.uom_id ?? undefined,
+        qty: returnQty[l.id],
+        unit_price: l.unit_price,
+        tax_rate: l.tax_rate,
+      }));
+      const created = await apiClient.post<{ id: string }>("/sales/returns", {
+        invoice_id: invoice.id,
+        contact_id: invoice.contact_id,
+        lines,
+      });
+      const returnId = created.data.id;
+      await apiClient.post(`/sales/returns/${returnId}/process`, { warehouse_id: warehouseId });
+      await apiClient.post(`/sales/returns/${returnId}/credit-note`);
+    },
+    onSuccess: onReturned,
+    onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر تسجيل المرتجع.")),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
+      <div className="w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">مرتجع مبيعات</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-body-sm text-on-surface-variant mb-4">
+          فاتورة <span dir="ltr" className="font-data-mono">{invoice.invoice_number}</span> — سيتم إصدار إشعار دائن (Credit Note) بقيمة الأصناف المرتجعة.
+        </p>
+        {errorMsg && (
+          <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
+          </div>
+        )}
+        {detailLoading ? (
+          <div className="flex items-center justify-center py-8 text-on-surface-variant gap-2"><Loader2 className="w-5 h-5 animate-spin" /> جاري التحميل...</div>
+        ) : !detail || detail.lines.length === 0 ? (
+          <p className="text-body-sm text-on-surface-variant">لا توجد أصناف في هذه الفاتورة.</p>
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-body-sm font-semibold text-on-surface-variant">المخزن المستلم للمرتجع</label>
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} required className="input-field">
+                <option value="">اختر المخزن</option>
+                {(warehouses ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-3">
+              <label className="text-body-sm font-semibold text-on-surface-variant">الأصناف المرتجعة (اترك الكمية فارغة لعدم إرجاع الصنف)</label>
+              {detail.lines.map((l) => (
+                <div key={l.id} className="flex items-center gap-2">
+                  <span className="flex-1 text-body-sm font-data-mono" dir="ltr">
+                    {l.item_id.slice(0, 8)}… × {l.qty} @ {egp(l.unit_price)}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max={String(l.qty)}
+                    dir="ltr"
+                    placeholder="0"
+                    value={returnQty[l.id] ?? ""}
+                    onChange={(e) => setReturnQty((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                    className="input-field w-24 font-mono"
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              type="submit"
+              disabled={mutation.isPending || !warehouseId || selectedLines.length === 0}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-primary text-on-primary font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70 mt-2"
+            >
+              {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />} تسجيل المرتجع وإصدار إشعار دائن
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const lineSchema = z.object({
   item_id: z.string().min(1, "اختر الصنف"),
   qty: z.coerce.number().gt(0, "الكمية أكبر من صفر"),
@@ -461,15 +759,26 @@ function CreateInvoiceModal({
   });
   const { fields, append, remove } = useFieldArray({ control, name: "lines" });
 
+  // Generated once per modal mount and sent as the Idempotency-Key header —
+  // defense-in-depth alongside the submit button's disabled-while-pending
+  // state below: if the same key is replayed (e.g. a network retry re-sends
+  // this exact request), the backend (app.core.idempotency) returns the
+  // invoice already created by the first attempt instead of a duplicate.
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+
   const mutation = useMutation({
     mutationFn: async (data: FormOut) => {
       // Ad-hoc path: contact_id + lines, order_id intentionally omitted so
       // the backend routes this to create_adhoc_invoice() instead of
       // generate_invoice_from_order().
-      await apiClient.post("/sales/invoices", {
-        contact_id: data.contact_id,
-        lines: data.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: l.unit_price })),
-      });
+      await apiClient.post(
+        "/sales/invoices",
+        {
+          contact_id: data.contact_id,
+          lines: data.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: l.unit_price })),
+        },
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      );
     },
     onSuccess: onCreated,
     onError: (err: AxiosError<{ detail?: string }>) => setErrorMsg(pickDetail(err, "تعذر إنشاء الفاتورة.")),

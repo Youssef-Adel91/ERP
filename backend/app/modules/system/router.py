@@ -30,11 +30,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks
 
 from app.core.database import get_public_db, get_redis
+from app.core.notifications.email import send_email
 from app.core.security import (
     create_access_token,
+    create_password_reset_token,
     create_refresh_token,
+    detect_refresh_token_reuse,
     hash_password,
+    invalidate_password_reset_token,
+    revoke_all_user_tokens,
     revoke_refresh_token,
+    rotate_refresh_token,
+    validate_password_reset_token,
     validate_refresh_token,
     verify_password,
 )
@@ -90,6 +97,31 @@ class RegisterResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    message: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    # Same complexity rule as RegisterRequest.password_complexity — a
+    # password reset must not be allowed to set a weaker password than
+    # registration requires.
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit.")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter.")
+        return v
+
+
+class MessageResponse(BaseModel):
     message: str
 
 
@@ -287,7 +319,15 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenResponse,
-    summary="Exchange refresh token for new access token",
+    summary="Exchange refresh token for new access token (rotates the refresh token)",
+    description=(
+        "**Rotation:** every successful call retires the presented refresh "
+        "token and returns a brand-new one — the old token cannot be used "
+        "again. **Reuse detection:** if an already-rotated (retired) refresh "
+        "token is presented again — a strong signal it was stolen and is "
+        "being replayed — ALL of that user's active refresh tokens are "
+        "revoked immediately, forcing re-login on every device/session."
+    ),
     tags=["Authentication"],
 )
 async def refresh_token(
@@ -301,6 +341,29 @@ async def refresh_token(
 
     result = await validate_refresh_token(data.refresh_token, redis)
     if not result:
+        # Not a currently-live token. Before rejecting outright, check
+        # whether it's a *retired* (already-rotated) token being replayed —
+        # that's not "just expired", it's a compromise signal: someone else
+        # has a copy of a token the legitimate client already exchanged.
+        reuse = await detect_refresh_token_reuse(data.refresh_token, redis)
+        if reuse:
+            reused_user_id, _reused_tenant_id = reuse
+            revoked_count = await revoke_all_user_tokens(reused_user_id, redis)
+            logger.warning(
+                "🚨 Refresh token reuse detected for user=%s — treating as "
+                "compromised credential, revoked %d active refresh token(s) "
+                "(forced logout on all devices).",
+                reused_user_id, revoked_count,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "This refresh token has already been used and cannot be "
+                    "reused. All sessions have been logged out as a "
+                    "precaution — please log in again."
+                ),
+            )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is invalid or expired.",
@@ -321,12 +384,20 @@ async def refresh_token(
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=tenant_id,
-        role=user.role,
+        roles=[str(user.role)],
+    )
+    # Rotate-on-use: retire the presented token (tombstoned for reuse
+    # detection, see rotate_refresh_token()) and issue a fresh one.
+    new_refresh_token = await rotate_refresh_token(
+        old_token=data.refresh_token,
+        user_id=user.id,
+        tenant_id=tenant_id,
+        redis_client=redis,
     )
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=data.refresh_token,
+        refresh_token=new_refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
@@ -365,3 +436,153 @@ async def get_me(current_user: CurrentUser) -> dict:
         "role": current_user.role,
         "is_active": current_user.is_active,
     }
+
+
+# ── Password Reset ────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Request a password-reset link via email",
+    description=(
+        "Always returns a generic success response, whether or not the "
+        "email is registered — this prevents the endpoint from being used "
+        "to enumerate which email addresses have an account. If the email "
+        "matches an active account, a single-use, short-lived (see "
+        "RESET_TOKEN_EXPIRE_MINUTES) reset token is emailed via the "
+        "existing SMTP notification channel "
+        "(app.core.notifications.email) — the same one used for invoice/"
+        "payment notifications elsewhere in the system. This is a "
+        "**public endpoint** — no Bearer token required."
+    ),
+    tags=["Authentication"],
+)
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_public_db),
+    redis: aioredis.Redis = Depends(get_redis),
+) -> MessageResponse:
+    from app.core.config import settings
+
+    generic_response = MessageResponse(
+        message=(
+            "إذا كان هذا البريد الإلكتروني مسجّلاً لدينا، فسيتم إرسال "
+            "رابط إعادة تعيين كلمة المرور إليه."
+        ),
+    )
+
+    result = await db.execute(
+        select(User).where(User.email == data.email.lower()),
+    )
+    user: User | None = result.scalar_one_or_none()
+
+    # Deliberately identical response whether the user exists, is inactive,
+    # or the email send itself fails below — never leak account existence
+    # through response shape or timing-sensitive branching visible to the
+    # caller.
+    if not user or not user.is_active:
+        logger.info(
+            "Password reset requested for unknown/inactive email=%s — "
+            "returning generic response, no email sent.",
+            data.email,
+        )
+        return generic_response
+
+    token = await create_password_reset_token(user.id, redis)
+
+    async def _send_reset_email() -> None:
+        await send_email(
+            to_email=user.email,
+            subject="إعادة تعيين كلمة المرور — Omni ERP",
+            body_text=(
+                f"مرحبًا {user.full_name or ''},\n\n"
+                "تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك.\n"
+                f"رمز إعادة التعيين الخاص بك هو:\n\n{token}\n\n"
+                f"هذا الرمز صالح لمدة {settings.RESET_TOKEN_EXPIRE_MINUTES} دقيقة فقط.\n"
+                "إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان."
+            ),
+            body_html=(
+                f"<p>مرحبًا {user.full_name or ''},</p>"
+                "<p>تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك.</p>"
+                f"<p>رمز إعادة التعيين الخاص بك هو:</p><p><code>{token}</code></p>"
+                f"<p>هذا الرمز صالح لمدة {settings.RESET_TOKEN_EXPIRE_MINUTES} دقيقة فقط.</p>"
+                "<p>إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان.</p>"
+            ),
+        )
+
+    # Best-effort, matches the notification dispatch discipline elsewhere
+    # (app.core.notifications.dispatch/email — never raises, never blocks
+    # the response) — send_email() already never raises, but run it in the
+    # background regardless so a slow/hanging SMTP connection can't stall
+    # this response and turn an intentionally-generic endpoint into a
+    # timing oracle.
+    background_tasks.add_task(_send_reset_email)
+
+    logger.info("Password reset token issued for user=%s", user.id)
+    return generic_response
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    summary="Reset password using a token from /forgot-password",
+    description=(
+        "Validates the single-use reset token (not expired, not already "
+        "used), hashes and sets the new password, invalidates the token so "
+        "it cannot be replayed, and — as a security best practice — revokes "
+        "ALL of the user's existing refresh tokens, forcing re-login on "
+        "every device/session. This is a **public endpoint** — no Bearer "
+        "token required (the reset token itself is the credential)."
+    ),
+    tags=["Authentication"],
+)
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_public_db),
+    redis: aioredis.Redis = Depends(get_redis),
+) -> MessageResponse:
+    from uuid import UUID
+
+    user_id_str = await validate_password_reset_token(data.token, redis)
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token is invalid, expired, or already used.",
+        )
+
+    result = await db.execute(
+        select(User).where(User.id == UUID(user_id_str)),
+    )
+    user: User | None = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        # Token was valid but the account disappeared/was deactivated since
+        # it was issued — invalidate the token regardless so it can't be
+        # retried, then report failure.
+        await invalidate_password_reset_token(data.token, redis)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token is invalid, expired, or already used.",
+        )
+
+    user.hashed_password = hash_password(data.new_password)
+    await db.commit()
+
+    # Single-use: burn the token immediately so it can't be replayed even
+    # if this request is somehow retried/duplicated.
+    await invalidate_password_reset_token(data.token, redis)
+
+    # Force re-login everywhere — a password reset (whether user-initiated
+    # or triggered by suspecting compromise) should not leave old sessions
+    # holding a still-valid refresh token minted under the old password.
+    revoked_count = await revoke_all_user_tokens(str(user.id), redis)
+    logger.info(
+        "Password reset for user=%s — revoked %d refresh token(s).",
+        user.id, revoked_count,
+    )
+
+    return MessageResponse(
+        message="تم إعادة تعيين كلمة المرور بنجاح. يرجى تسجيل الدخول مرة أخرى.",
+    )

@@ -21,30 +21,73 @@ const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 const TENANT_ID_KEY = "tenant_id";
 
-export function getAccessToken(): string | null {
+/**
+ * Storage abstraction for the three auth keys (access token, refresh token,
+ * tenant id). "remember me" checked -> persisted in localStorage (survives
+ * browser restarts). Unchecked -> sessionStorage only (cleared when the tab/
+ * browser closes). Every read/write/clear for these keys MUST go through
+ * these helpers so persist=true and persist=false sessions can never end up
+ * inconsistent (e.g. a read that only checks localStorage while a
+ * session-only login wrote to sessionStorage).
+ */
+function readKey(key: string): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+}
+
+function writeKey(key: string, value: string, persist: boolean) {
+  if (typeof window === "undefined") return;
+  if (persist) {
+    localStorage.setItem(key, value);
+    sessionStorage.removeItem(key); // no stale duplicate in the other storage
+  } else {
+    sessionStorage.setItem(key, value);
+    localStorage.removeItem(key); // don't leave a persisted token behind either
+  }
+}
+
+function removeKeyBoth(key: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
+}
+
+export function getAccessToken(): string | null {
+  return readKey(ACCESS_TOKEN_KEY);
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return readKey(REFRESH_TOKEN_KEY);
 }
 
-/** Persists the auth token + active tenant for subsequent requests. */
-export function saveSession(accessToken: string, tenantId: string, refreshToken?: string) {
+export function getTenantId(): string | null {
+  return readKey(TENANT_ID_KEY);
+}
+
+/**
+ * Persists the auth token + active tenant for subsequent requests.
+ * `persist` mirrors the login page's "remember me" checkbox: true (default)
+ * writes to localStorage so the session survives a browser restart; false
+ * writes to sessionStorage only, so it's cleared when the tab/browser closes.
+ */
+export function saveSession(
+  accessToken: string,
+  tenantId: string,
+  refreshToken?: string,
+  persist = true,
+) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  localStorage.setItem(TENANT_ID_KEY, tenantId);
-  if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  writeKey(ACCESS_TOKEN_KEY, accessToken, persist);
+  writeKey(TENANT_ID_KEY, tenantId, persist);
+  if (refreshToken) writeKey(REFRESH_TOKEN_KEY, refreshToken, persist);
 }
 
-/** Clears all locally-stored auth state. */
+/** Clears all locally-stored auth state, from both localStorage and sessionStorage. */
 export function clearSessionStorage() {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.removeItem(TENANT_ID_KEY);
+  removeKeyBoth(ACCESS_TOKEN_KEY);
+  removeKeyBoth(REFRESH_TOKEN_KEY);
+  removeKeyBoth(TENANT_ID_KEY);
 }
 
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -61,11 +104,16 @@ async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
 
+  // Preserve whichever persistence mode the original login used: if the
+  // current access token lives in localStorage, the refreshed one should
+  // too (and vice versa for a session-only login).
+  const persist = typeof window !== "undefined" && localStorage.getItem(ACCESS_TOKEN_KEY) !== null;
+
   try {
     const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
       refresh_token: refreshToken,
     });
-    saveSession(data.access_token, localStorage.getItem(TENANT_ID_KEY) ?? "", data.refresh_token);
+    saveSession(data.access_token, getTenantId() ?? "", data.refresh_token, persist);
     return data.access_token as string;
   } catch {
     return null;

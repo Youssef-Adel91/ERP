@@ -10,8 +10,9 @@ from decimal import Decimal
 
 from app.core.db.database import get_tenant_db as get_db_session
 
-from app.modules.imports.models.core import ImportDossier, ImportExpense, ImportStatus
+from app.modules.imports.models.core import ImportDossier, ImportExpense, ImportStatus, DossierCostLayer
 from app.modules.imports.services.landed_cost import apply_landed_costs
+from app.modules.inventory.models.core import CostLayer
 from app.modules.system.dependencies import CurrentUser
 
 
@@ -34,6 +35,10 @@ class ExpenseCreate(BaseModel):
         if v <= 0:
             raise ValueError("amount must be greater than zero.")
         return v
+
+
+class CostLayerLinkCreate(BaseModel):
+    layer_id: UUID
 
 
 @router.post("", response_model=ImportDossier)
@@ -161,6 +166,69 @@ async def delete_expense(
 
     await session.delete(expense)
     await session.commit()
+
+
+@router.get("/{id}/cost-layers", response_model=list[DossierCostLayer])
+async def list_dossier_cost_layers(
+    id: UUID,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Lists the inventory cost layers currently linked to (received against) a dossier."""
+    result = await session.execute(
+        select(DossierCostLayer).where(DossierCostLayer.dossier_id == id).order_by(DossierCostLayer.created_at),
+    )
+    return result.scalars().all()
+
+
+@router.post("/{id}/cost-layers", response_model=DossierCostLayer)
+async def link_dossier_cost_layer(
+    id: UUID,
+    data: CostLayerLinkCreate,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Links a previously-received inventory CostLayer (e.g. created off the back of a
+    goods-received event) to this dossier, marking it as inventory whose cost should
+    absorb a proportional share of this dossier's freight/customs/clearance expenses
+    when the dossier is closed. Without this link, apply_landed_costs() has nothing
+    to distribute against and close_dossier() silently applies no landed cost at all.
+    """
+    dossier = await session.get(ImportDossier, id)
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    if dossier.status != ImportStatus.OPEN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot link a cost layer to a dossier that is already closed.",
+        )
+
+    layer = await session.get(CostLayer, data.layer_id)
+    if not layer:
+        raise HTTPException(status_code=404, detail="Cost layer not found")
+
+    existing = await session.execute(
+        select(DossierCostLayer).where(
+            DossierCostLayer.dossier_id == id,
+            DossierCostLayer.layer_id == data.layer_id,
+        )
+    )
+    if existing.scalars().first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This cost layer is already linked to the dossier.",
+        )
+
+    link = DossierCostLayer(
+        dossier_id=id,
+        layer_id=data.layer_id,
+        created_by=current_user.id,
+    )
+    session.add(link)
+    await session.commit()
+    await session.refresh(link)
+    return link
 
 
 @router.post("/{id}/close")

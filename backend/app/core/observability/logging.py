@@ -5,7 +5,9 @@ Configures structlog to output JSON formatted logs with request-scoped
 context variables (tenant_id, user_id, request_id, trace_id).
 """
 import logging
+import os
 from contextvars import ContextVar
+from logging.handlers import RotatingFileHandler
 
 import structlog
 
@@ -78,11 +80,30 @@ def setup_logging(json_logs: bool = True, log_level: int = logging.INFO) -> None
 
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
-    
+
     root_logger = logging.getLogger()
     # Remove existing handlers to avoid duplicates
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
     root_logger.addHandler(handler)
+
+    # Also mirror all logs to a rotating file so tracebacks can be inspected
+    # without needing to scroll back through a live terminal session.
+    try:
+        log_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "logs")
+        log_dir = os.path.abspath(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, "backend.log"),
+            maxBytes=10 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except OSError:
+        # Never let log-file setup prevent the app from starting.
+        pass
+
     root_logger.setLevel(log_level)
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
