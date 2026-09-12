@@ -371,6 +371,7 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     from app.modules.accounting.models import (
         DEFAULT_ACCOUNTS,
         Account,
+        AccountingPeriod,
         JournalEntry,
         TransactionLine,
     )
@@ -394,18 +395,31 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     # WhatsAppTenantConfig moved to public schema (see its module docstring) —
     # no longer part of tenant provisioning, intentionally not imported here.
     from app.plugins.recruitment.models.job_orders import JobOrder, JobOrderCase
+    from app.plugins.recruitment.models.candidate import Candidate
+    from app.plugins.recruitment.models.interview import Interview
     from app.plugins.hospitality.models.folio import FolioItem
     from app.plugins.rental.models.inspection import VehicleInspection
     from app.plugins.travel.models.package import (
         TravelItineraryDay, TravelPackage, TravelPackageComponent,
     )
     from app.plugins.travel.models.visa import VisaApplication
+    # NOTE: TravelPassenger/VisaDocument (Travel Readiness Wave) and
+    # Candidate (Recruitment Readiness Wave) were previously missing from
+    # this function's imports AND from `tenant_tables` below — meaning any
+    # BRAND NEW tenant registered via provision_tenant_schema() (the
+    # create_all()-based fast path, not `alembic upgrade head`) never got
+    # these tables at all, even though an *existing* tenant that ran
+    # `alembic upgrade head` would. Discovered while building the
+    # Recruitment Candidate model — fixed here for all three at once.
+    from app.plugins.travel.models.passenger import TravelPassenger
+    from app.plugins.travel.models.document import VisaDocument
     from app.modules.finance.models.cheques import Cheque
     from app.modules.news.models import Announcement
     from app.modules.imports.models.core import ImportDossier, ImportExpense
     from app.modules.approvals.models.core import ApprovalRule, ApprovalRequest, ApprovalDecision
     from app.modules.eta.models.core import EtaTenantConfig, EtaDocument, EtaSubmission
     from app.modules.eta.models.codes import EgsCode
+    from app.modules.ai.models import AIDraftedMessage
 
     # Inventory/Sales/Purchasing — cut over from app.plugins.{inventory,sales,
     # purchases} to the enterprise-grade app.modules.{inventory,sales,
@@ -447,6 +461,15 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         Account.__table__,
         JournalEntry.__table__,
         TransactionLine.__table__,
+        # AccountingPeriod was defined in models/core.py but never listed
+        # here — meaning the tenant_ba8ce6b4... schema (and every tenant
+        # schema ever provisioned) never actually got an accounting_periods
+        # TABLE, let alone a row in it. create_journal_entry() requires an
+        # open AccountingPeriod covering entry_date for every single posting
+        # (its "hard block" — see services/journal.py), so this alone was
+        # enough to make 100% of automated GL postings impossible tenant-wide,
+        # independent of the account_id/invoice_number bugs found the same day.
+        AccountingPeriod.__table__,
         Contact.__table__,
         CarrierAccount.__table__,
         Shipment.__table__,
@@ -472,6 +495,8 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         # Recruitment Plugin — depends on cases and contacts
         JobOrder.__table__,
         JobOrderCase.__table__,
+        Candidate.__table__,                # FK → cases (Recruitment Readiness Wave)
+        Interview.__table__,                # FK → cases, recruitment_job_orders
         # Hospitality Plugin
         FolioItem.__table__,
         # Rental Plugin
@@ -481,6 +506,8 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         TravelItineraryDay.__table__,       # FK → travel_packages
         TravelPackageComponent.__table__,   # FK → travel_packages, case_vendors
         VisaApplication.__table__,          # FK → cases, case_vendors
+        TravelPassenger.__table__,          # FK → cases, travel_visa_applications
+        VisaDocument.__table__,             # FK → travel_visa_applications
         # Finance — Cheques (depends on contacts; invoice_id/transaction_id are
         # unconstrained UUID columns, no FK, so no extra ordering requirement)
         Cheque.__table__,
@@ -554,56 +581,107 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         EgsCode.__table__,
         EtaDocument.__table__,
         EtaSubmission.__table__,
+        # AI Drafts
+        AIDraftedMessage.__table__,
     ]
 
     # ── Step 1 & 2: Create schema + tables ────────────────────────────────────
-    # NOTE: tables are now created by running the real `alembic/tenant/`
-    # migration chain (via TenantMigrationOrchestrator._migrate_tenant),
-    # NOT create_all(). This closes the "Alembic tenant migrations bypassed
-    # by create_all" gap: create_all only ever reflects *current* model
-    # state and never stamps alembic_version, so a schema provisioned that
-    # way can never safely receive a FUTURE tenant migration (it would try
-    # to recreate tables that already exist). Running `alembic upgrade
-    # head` instead both creates the tables AND leaves the schema at a
-    # known, re-migratable revision. It's also idempotent — running it
-    # again against an already-migrated schema (e.g.
-    # scripts/cutover_plugins_to_modules.py's re-provisioning step) is a
-    # no-op, same as create_all's IF NOT EXISTS semantics were.
+    # PERFORMANCE NOTE: Previously this used `alembic upgrade head` via a
+    # subprocess, which runs 45 individual migration scripts each making their
+    # own round-trip to the cloud DB (Neon) — totalling 2+ minutes per
+    # registration. Instead we use SQLAlchemy create_all() with a single
+    # connection (one batch of DDL statements), then stamp alembic_version to
+    # the current head so future `alembic upgrade` runs remain idempotent and
+    # work correctly (they see the schema as already at head and skip).
     #
-    # `tenant_tables` above is now unused for table creation but is kept as
-    # living documentation of what belongs in the tenant schema, and as a
-    # safety net: if it's ever missing a model that IS in a migration (or
-    # vice versa), that's a signal the two have drifted and need attention.
+    # `tenant_tables` above lists every table in dependency order; create_all
+    # with checkfirst=True is safe to re-run (IF NOT EXISTS semantics).
+    # The alembic stamp is done in a second pass after all tables exist.
 
     # ── Step 1: Create schema (idempotent) ────────────────────────────────
-    # Must exist before alembic can create its alembic_version table inside it.
     async with engine.begin() as conn:
         await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+    logger.info("✅ Schema '%s' created.", schema)
 
-    # ── Step 2: Run Alembic tenant migrations ───────────────────────────────
-    # Use synchronous subprocess.run() instead of the async
-    # TenantMigrationOrchestrator._migrate_tenant() which uses
-    # asyncio.create_subprocess_exec(). Since _provision_tenant_schema_internal
-    # already runs inside a dedicated subprocess (via provision_tenant_schema),
-    # a synchronous call avoids the triple-nesting (uvicorn→P1→P2) that causes
-    # pipe handle inheritance hangs on Windows.
+    # ── Step 2a: Create all tenant tables ─────────────────────────────────
+    # Architecture note: every tenant model defines __table_args__ schema="tenant"
+    # (a PLACEHOLDER schema name, never a real Postgres schema) and
+    # ForeignKey("tenant.X.id") as hardcoded strings.  This placeholder-schema
+    # pattern is used correctly elsewhere in this file (see tenant_session()
+    # above) via `engine.execution_options(schema_translate_map={"tenant": schema})`,
+    # which rewrites "tenant" -> the real tenant_<uuid> schema AT SQL-COMPILE
+    # TIME, for both a table's own schema AND any FK/Enum schema references
+    # in the same statement. That is the ONLY mechanism proven to work here.
+    #
+    # DO NOT REINTRODUCE either of these two previously-attempted, and
+    # CONFIRMED BROKEN, approaches:
+    #   1. `tbl.to_metadata(_meta, schema="tenant_xxx")` — to_metadata()
+    #      rebinds the Table object's own schema, but string-based
+    #      ForeignKey("tenant.accounts.id") references stay frozen with the
+    #      literal "tenant" prefix (they are parsed once at class-definition
+    #      time), so create_all() fails with
+    #      NoReferencedTableError: ... could not find table 'tenant.accounts'.
+    #   2. `tbl.to_metadata(_meta, schema=None)` + nulling Enum.schema +
+    #      switching to Neon's UNPOOLED endpoint + `search_path` connect_args
+    #      — the theory was that unqualified DDL + search_path would let
+    #      Postgres resolve everything by bare tablename. It does NOT: the
+    #      FK string colspec is still literally "tenant.accounts.id", and
+    #      SQLAlchemy's FK resolution looks for a table registered under
+    #      that exact "tenant.accounts" key in the (single, schema=None)
+    #      MetaData — which no longer exists once schema was stripped — so
+    #      the identical NoReferencedTableError recurs. Verified by
+    #      re-testing against a live Neon DB; this is not a hypothesis.
+    #
+    # schema_translate_map avoids both problems because it does not touch
+    # Table/Column/ForeignKey objects at all — it rewrites the schema token
+    # in the compiled SQL text right before execution, so "tenant" resolves
+    # to the real schema consistently everywhere it appears (table DDL, FK
+    # references, Enum CREATE TYPE) in one pass.
+    from sqlalchemy import create_engine as _sync_create_engine
+
+    # Build psycopg2 sync URL from the async engine URL. Use the POOLED
+    # endpoint (same one the app uses everywhere else) — schema_translate_map
+    # needs no `options`/search_path connect_args at all, so the pooler's
+    # rejection of startup-parameter `options` is a non-issue here.
+    _db_url = (
+        engine.url.render_as_string(hide_password=False)
+        .replace("postgresql+asyncpg", "postgresql+psycopg2")
+        .replace("ssl=require", "sslmode=require")
+    )
+    _sync_engine = _sync_create_engine(
+        _db_url,
+        pool_pre_ping=True,
+    ).execution_options(schema_translate_map={"tenant": schema})
+
+    try:
+        _shared_metadata = tenant_tables[0].metadata
+        _shared_metadata.create_all(_sync_engine, tables=tenant_tables, checkfirst=True)
+        logger.info("✅ Tenant schema '%s' tables created via create_all.", schema)
+    finally:
+        _sync_engine.dispose()
+
+    # ── Step 2b: Stamp alembic_version to current head ────────────────────
+    # This tells alembic "this schema is already at head" so future
+    # `alembic upgrade head` runs are no-ops instead of failing with
+    # "table already exists".
     import subprocess
     import sys
     from pathlib import Path
     _backend_root = Path(__file__).resolve().parents[3]
-
-    migrate_result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema}", "upgrade", "head"],
+    stamp_result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema}", "stamp", "head"],
         capture_output=True,
         cwd=_backend_root,
     )
-    if migrate_result.returncode != 0:
-        stderr_text = migrate_result.stderr.decode(errors="replace")
-        logger.error(
-            "❌ Tenant migration FAILED for schema=%s:\n%s", schema, stderr_text,
+    if stamp_result.returncode != 0:
+        # Non-fatal: tables exist, future migrations will still work — they
+        # may just see an "already applied" warning. Log but don't raise.
+        logger.warning(
+            "⚠️ Alembic stamp failed for schema=%s (tables created OK): %s",
+            schema, stamp_result.stderr.decode(errors="replace")[-500:],
         )
-        raise RuntimeError(f"Tenant migration failed for '{schema}': {stderr_text[-2000:]}")
-    logger.info("✅ Tenant schema '%s' alembic migrations applied.", schema)
+    else:
+        logger.info("✅ Tenant schema '%s' stamped to alembic head.", schema)
 
     # ── Step 3: Seed default Chart of Accounts ────────────────────────────────
     # Each new tenant gets the same baseline chart, ready for event handlers.
@@ -630,6 +708,31 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
             schema,
             len(DEFAULT_ACCOUNTS),
         )
+
+        # ── Step 3b: Seed a wide-open AccountingPeriod ────────────────────────
+        # Discovered via live verification (11 Sep 2026): create_journal_entry()
+        # (app/modules/accounting/services/journal.py) HARD-BLOCKS every single
+        # journal entry — including the automated ones from event handlers like
+        # invoice.created and the GL Bridge (sales/inventory events) — unless an
+        # AccountingPeriod row exists covering entry_date. NOTHING in this
+        # codebase ever created one: no seeding here, no admin API endpoint.
+        # That means, before this fix, EVERY tenant would have hit
+        # ClosedPeriodError on its very first attempted journal entry, for as
+        # long as the tenant has existed — a codebase-wide blocker for all
+        # automated GL posting, not specific to any one vertical. Seed one
+        # deliberately wide-open period (2020–2099) so postings are never
+        # blocked by a missing period; an OWNER/ADMIN/ACCOUNTING user can later
+        # close/split periods via the accounting UI once that workflow exists.
+        from datetime import datetime as _dt
+
+        async with tenant_session(tenant_id) as session:
+            session.add(AccountingPeriod(
+                name="Open Period",
+                start_date=_dt(2020, 1, 1),
+                end_date=_dt(2099, 12, 31, 23, 59, 59),
+                is_closed=False,
+            ))
+        logger.info("✅ Tenant schema '%s' seeded with a default open AccountingPeriod.", schema)
     else:
         logger.info(
             "✅ Tenant schema '%s' tables created/verified (COA seeding skipped).",

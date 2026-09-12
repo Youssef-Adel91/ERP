@@ -85,11 +85,18 @@ async def create_account(data: AccountCreateRequest, db: AsyncSession) -> Accoun
     if existing.scalar_one_or_none():
         raise ValueError(f"Account code '{data.code}' already exists.")
 
+    # NOTE: the Account model's column is `account_type` (see
+    # app/modules/accounting/models/core.py), not `type`. Passing `type=`
+    # to the SQLModel constructor was silently accepted as an unrecognized
+    # kwarg (the same footgun found in Resource(is_active=...) earlier
+    # today) — account_type was left at its default (there is none; it's a
+    # required NOT NULL column), causing a Postgres IntegrityError on every
+    # single call to this endpoint. Discovered via live verification.
     account = Account(
         code=data.code,
         name=data.name,
         name_ar=data.name_ar,
-        type=data.account_type,
+        account_type=data.account_type,
         is_system=data.is_system,
     )
     db.add(account)

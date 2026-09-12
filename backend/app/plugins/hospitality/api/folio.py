@@ -15,6 +15,7 @@ from app.core.db.database import get_tenant_db
 from app.plugins.hospitality.models.folio import FolioItem, FolioItemCategory
 from app.plugins.hospitality.services.folio import calculate_folio_total, post_extra_charge
 from app.modules.cases.models.core import Case, CaseType
+from app.modules.system.dependencies import CurrentUser
 
 router = APIRouter(prefix="/hospitality", tags=["Hospitality – Folio"])
 
@@ -30,7 +31,7 @@ class FolioItemCreate(BaseModel):
 
 
 @router.get("/reservations/{case_id}/folio")
-async def get_folio(case_id: uuid.UUID, session: AsyncSession = Depends(get_tenant_db)):
+async def get_folio(case_id: uuid.UUID, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     """Returns a full computed folio for a room reservation."""
     case = await session.get(Case, case_id)
     if not case:
@@ -52,6 +53,7 @@ async def get_folio(case_id: uuid.UUID, session: AsyncSession = Depends(get_tena
 async def add_folio_item(
     case_id: uuid.UUID,
     body: FolioItemCreate,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     """Posts a single extra charge (restaurant, laundry, minibar, etc.) to the folio."""

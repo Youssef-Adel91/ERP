@@ -210,6 +210,15 @@ DEFAULT_ACCOUNTS: list[dict] = [
     {"code": "2100", "name": "Accounts Payable", "name_ar": "الموردون (حسابات دائنة)", "type": AccountType.LIABILITY, "is_system": True},
     {"code": "3100", "name": "Owner's Equity", "name_ar": "حقوق الملكية", "type": AccountType.EQUITY, "is_system": True},
     {"code": "4010", "name": "Sales Revenue", "name_ar": "إيرادات المبيعات", "type": AccountType.REVENUE, "is_system": True},
+    # 4020 is referenced by app/plugins/rental/bootstrap.py's default
+    # CaseType.meta["revenue_gl_account"] ("Rental Revenue") but was missing
+    # from this seed list — discovered via live verification (11 Sep 2026):
+    # every vehicle-return GL posting failed with
+    # LookupError("Account with code '4020' not found.") because
+    # create_journal_entry() resolves account_code -> Account row and there
+    # was no such row for any tenant. Seeded here so rental revenue gets its
+    # own ledger line instead of colliding with generic Sales Revenue.
+    {"code": "4020", "name": "Vehicle Rental Revenue", "name_ar": "إيرادات تأجير المركبات", "type": AccountType.REVENUE, "is_system": True},
     {"code": "5010", "name": "Cost of Goods Sold", "name_ar": "تكلفة البضاعة المباعة", "type": AccountType.EXPENSE, "is_system": False},
     {"code": "5100", "name": "Operating Expenses", "name_ar": "المصروفات التشغيلية", "type": AccountType.EXPENSE, "is_system": False},
 ]

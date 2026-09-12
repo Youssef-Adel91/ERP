@@ -105,3 +105,9 @@ class VisaApplication(TenantBase, table=True):
 
     rejection_reason: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     notes: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    # Soft delete — records with financial impact (fee_charged>0 or cost>0) are
+    # never hard-deleted; the API sets is_active=False and excludes them from
+    # normal list views.  Kept True for all new records and backfilled True for
+    # all existing ones by the A1b2c3d4e5f6 migration.
+    is_active: bool = Field(default=True, index=True)

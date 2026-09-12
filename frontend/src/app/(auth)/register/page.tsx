@@ -42,8 +42,16 @@ export default function RegisterPage() {
   const { setUser } = useAppStore();
   const [showPw, setShowPw] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
   const [step, setStep] = useState(0); // 0=company, 1=user info, 2=submit
+
+  const loadingMessages = [
+    "جاري إنشاء الحساب...",
+    "جاري إعداد قاعدة البيانات...",
+    "جاري تهيئة نظام المحاسبة...",
+    "جاري الانتهاء من الإعداد...",
+  ];
 
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -65,14 +73,24 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
+    setLoadingStep(0);
     setErrorMsg("");
+
+    // Cycle through loading messages while we wait for provisioning
+    const msgInterval = setInterval(() => {
+      setLoadingStep((prev) => (prev + 1) % loadingMessages.length);
+    }, 3000);
+
     try {
+      // Register takes up to ~60s (Alembic tenant migrations + COA seed)
       const { data: res } = await apiClient.post<RegisterResponse>("/auth/register", {
         company_name: data.company_name,
         full_name: data.full_name,
         email: data.email,
         password: data.password,
-      });
+      }, { timeout: 120_000 });
+
+      clearInterval(msgInterval);
 
       saveSession(res.access_token, res.tenant_id, res.refresh_token);
 
@@ -87,6 +105,7 @@ export default function RegisterPage() {
 
       router.push("/onboarding/systems");
     } catch (err) {
+      clearInterval(msgInterval);
       const axiosErr = err as AxiosError<{ detail?: string }>;
       setErrorMsg(pickDetail(axiosErr, axiosErr.message || "حدث خطأ أثناء إنشاء الحساب."));
     } finally {
@@ -305,7 +324,7 @@ export default function RegisterPage() {
                   <button type="submit" disabled={isLoading}
                     className="flex-[2] bg-primary text-on-primary py-3.5 rounded-lg font-headline-sm text-headline-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-70">
                     {isLoading ? (
-                      <><Loader2 className="w-5 h-5 animate-spin" /> جاري الإنشاء...</>
+                      <><Loader2 className="w-5 h-5 animate-spin" /> {loadingMessages[loadingStep]}</>
                     ) : "إنشاء الحساب"}
                   </button>
                 </div>

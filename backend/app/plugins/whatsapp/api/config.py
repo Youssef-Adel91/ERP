@@ -19,6 +19,8 @@ same as ETA's config endpoint isn't gated by anything either.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -29,6 +31,8 @@ from app.core.db.database import get_public_db
 from app.modules.system.dependencies import CurrentUser
 from app.plugins.whatsapp.models import WhatsAppTenantConfig
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Integration"])
 
 
@@ -37,6 +41,13 @@ class WhatsAppConfigIn(BaseModel):
     access_token_ref: str | None = None
     webhook_verify_token: str | None = None
     is_active: bool = False
+    # Phone numbers (digits only, no '+' — Meta's own message.from format)
+    # allowed to query the AI Bot over this WhatsApp number. See
+    # WhatsAppTenantConfig.authorized_numbers and
+    # app.plugins.whatsapp.listeners.handle_whatsapp_message_ai_bot for why
+    # this must be an explicit allowlist rather than "anyone who messages
+    # this number" — that number also receives real customer messages.
+    authorized_numbers: list[str] = []
 
 
 @router.get("/config", response_model=WhatsAppTenantConfig | None)
@@ -69,10 +80,18 @@ async def upsert_config(
         session.add(config)
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         # phone_number_id is globally unique — it's the reverse-lookup key
         # inbound webhooks use to resolve tenant_id, so two tenants can
         # never register the same Meta phone number.
+        #
+        # This branch used to convert EVERY IntegrityError straight to that
+        # one message with no logging — which masked a real bug (a missing
+        # server_default on created_at/updated_at, fixed in migration
+        # f1a2b3c4d5e6) as a fake phone-number conflict for weeks. Logging
+        # the actual DB error here before returning the 409 keeps that from
+        # happening silently again.
+        logger.error("WhatsApp config upsert IntegrityError: %s", exc)
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

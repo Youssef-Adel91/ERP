@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,6 +61,7 @@ class ResourceCreateIn(BaseModel):
 async def open_case(
     body: CaseCreateIn,
     request: Request,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     """Opens a new Case in the configured initial stage."""
@@ -89,14 +90,17 @@ async def list_cases(
     current_user: CurrentUser,
     case_type_id: UUID | None = None,
     status: str | None = None,
+    limit: int = Query(default=100, le=500, description="Maximum records to return"),
+    offset: int = Query(default=0, ge=0, description="Number of records to skip"),
     session: AsyncSession = Depends(get_tenant_db),
 ):
-    """Lists all Cases, optionally filtered by type and status."""
+    """Lists Cases, optionally filtered by type and status. Supports limit/offset pagination."""
     q = select(Case)
     if case_type_id:
         q = q.where(Case.case_type_id == case_type_id)
     if status:
         q = q.where(Case.status == status.upper())
+    q = q.order_by(Case.created_at.desc()).limit(limit).offset(offset)
     result = await session.execute(q)
     return result.scalars().all()
 
@@ -115,6 +119,7 @@ async def transition(
     id: UUID,
     body: TransitionIn,
     request: Request,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     """

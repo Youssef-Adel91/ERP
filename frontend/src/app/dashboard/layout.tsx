@@ -41,6 +41,7 @@ import {
   LogOut,
   AlertTriangle,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 
 interface NavItem {
@@ -75,6 +76,7 @@ const navSections: NavSection[] = [
     label: null,
     items: [
       { href: "/dashboard", label: "لوحة القيادة", icon: LayoutDashboard },
+      { href: "/dashboard/insights", label: "رؤى الذكاء الاصطناعي", icon: Sparkles },
     ],
   },
   {

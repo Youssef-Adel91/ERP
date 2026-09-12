@@ -88,3 +88,22 @@ async def run_billing_cycle(ctx: dict[str, Any]) -> None:
             logger.info("Billing cycle cron: %s", result)
         except Exception:
             logger.exception("Billing cycle cron failed")
+
+
+async def run_whatsapp_morning_briefs(ctx: dict[str, Any]) -> None:
+    """
+    Cron job: AI roadmap Level 3 — daily AI-narrated WhatsApp morning brief
+    to every tenant with at least one authorized number (see
+    app.plugins.whatsapp.models.WhatsAppTenantConfig.authorized_numbers).
+    Cross-tenant fan-out (public-schema first, then one tenant_session per
+    eligible tenant inside the service function itself), same reasoning as
+    run_billing_cycle above — this is NOT wrapped in @tenant_job, which
+    assumes a single already-known tenant_id.
+    """
+    from app.plugins.whatsapp.services.morning_brief import send_all_morning_briefs
+
+    try:
+        result = await send_all_morning_briefs()
+        logger.info("Morning brief cron: %s", result)
+    except Exception:
+        logger.exception("Morning brief cron failed")

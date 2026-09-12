@@ -178,6 +178,7 @@ async def create_adhoc_invoice(
 async def post_invoice(
     session: AsyncSession,
     invoice_id: UUID,
+    tenant_id: UUID | str,
 ) -> SalesInvoice:
     """
     Posts a DRAFT invoice:
@@ -223,13 +224,27 @@ async def post_invoice(
         session.add(order)
 
     # Determine tenant_id for event envelope
-    try:
-        from app.core.db.context import current_tenant
-
-        tenant_id = current_tenant.get()
-    except (ImportError, Exception):
-        tenant_id = "system"
-
+    #
+    # BUG (found via live WhatsApp verification, 11 Sep 2026): this used to
+    # read a module-level ContextVar named `current_tenant` from
+    # app.core.db.context — but that module only ever defined
+    # `current_tenant_id` (see its docstring), and nothing in the codebase
+    # ever set it regardless of the name. The `from ... import current_tenant`
+    # line therefore always raised ImportError, which the bare
+    # `except (ImportError, Exception): tenant_id = "system"` silently
+    # swallowed — so every single `sales.invoice_posted` event, for every
+    # tenant, was published with tenant_id="system". Downstream consumers
+    # (the accounting GL Bridge in app.modules.accounting.consumers.events,
+    # and app.plugins.whatsapp.listeners.handle_invoice_posted_whatsapp)
+    # then tried to open a tenant_session for the literal tenant "system",
+    # which resolves to schema "tenant_system" — a schema that doesn't
+    # exist — and failed with
+    # `asyncpg.exceptions.UndefinedTableError: relation "tenant_system.contacts"
+    # does not exist`, swallowed by the EventBus and logged only as a
+    # warning. So every invoice ever posted through this endpoint silently
+    # never reached accounting or WhatsApp. Fixed by taking tenant_id as an
+    # explicit parameter from the caller (the router already has it via
+    # CurrentUser) instead of any ContextVar.
     event_bus = get_event_bus()
     event = DomainEvent(
         event_type="sales.invoice_posted",

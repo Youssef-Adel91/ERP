@@ -11,6 +11,7 @@ from app.workers.tasks.main import (
     reconcile_provisioning,
     run_billing_cycle,
     run_invariants,
+    run_whatsapp_morning_briefs,
     trigger_relay,
 )
 
@@ -53,6 +54,13 @@ class WorkerSettings:
         # day at 03:00 (low-traffic hour); the sweep is idempotent so a
         # missed/retried run is harmless.
         cron(run_billing_cycle, hour=3, minute=0),
+        # AI roadmap Level 3 — daily WhatsApp morning brief. 05:00 UTC ≈
+        # 07:00 Cairo (Africa/Cairo is UTC+2, no DST) — a reasonable
+        # "before the workday starts" time. Per-tenant timezone-aware
+        # scheduling (Tenant.timezone) is future work; every tenant gets
+        # the same UTC slot for now, same MVP-first tradeoff already made
+        # for accounting periods (see the project doc's §1 note on that).
+        cron(run_whatsapp_morning_briefs, hour=5, minute=0),
     ]
     
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

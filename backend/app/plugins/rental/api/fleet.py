@@ -19,7 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import require_role
 from app.modules.cases.models.core import Case, Resource
+from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import UserRole
 
 router = APIRouter(prefix="/rental", tags=["Rental – Fleet"])
 
@@ -68,26 +71,35 @@ class VehicleAvailabilityOut(VehicleOut):
 
 
 def _resource_to_out(r: Resource) -> dict:
+    attrs = dict(r.attributes or {})
+    # Resource has neither a boolean is_active column nor a name_ar column —
+    # only id/resource_type/name/code/status/attributes exist on the real
+    # table. Both are stored inside the JSONB `attributes` dict under a
+    # reserved "_name_ar" key (status handles is_active, see below) so no
+    # schema migration is needed. Excluded from the public `attributes` echo.
+    name_ar = attrs.pop("_name_ar", None)
     return {
         "id": str(r.id),
         "code": r.code,
         "name": r.name,
-        "name_ar": r.name_ar,
-        "is_active": r.is_active,
-        "attributes": r.attributes or {},
+        "name_ar": name_ar,
+        # ResourceStatus: AVAILABLE/OCCUPIED/MAINTENANCE — this module treats
+        # a "INACTIVE" status string as the soft-delete marker, the closest
+        # equivalent that doesn't require a schema migration.
+        "is_active": r.status != "INACTIVE",
+        "attributes": attrs,
     }
 
 
 @router.get("/fleet", response_model=list[VehicleOut])
 async def list_fleet(
+    current_user: CurrentUser,
     make: str | None = Query(None),
     is_active: bool = Query(True),
     session: AsyncSession = Depends(get_tenant_db),
 ):
-    stmt = select(Resource).where(
-        Resource.resource_type == "vehicle",
-        Resource.is_active == is_active,
-    )
+    stmt = select(Resource).where(Resource.resource_type == "vehicle")
+    stmt = stmt.where(Resource.status != "INACTIVE") if is_active else stmt.where(Resource.status == "INACTIVE")
     vehicles = (await session.scalars(stmt)).all()
 
     results = []
@@ -101,6 +113,7 @@ async def list_fleet(
 
 @router.get("/fleet/availability", response_model=list[VehicleAvailabilityOut])
 async def check_vehicle_availability(
+    current_user: CurrentUser,
     pickup_date: str = Query(..., description="ISO date, e.g. 2024-12-25"),
     return_date: str = Query(..., description="ISO date, e.g. 2024-12-28"),
     session: AsyncSession = Depends(get_tenant_db),
@@ -117,7 +130,7 @@ async def check_vehicle_availability(
 
     stmt = select(Resource).where(
         Resource.resource_type == "vehicle",
-        Resource.is_active == True,
+        Resource.status != "INACTIVE",
     )
     vehicles = (await session.scalars(stmt)).all()
 
@@ -145,8 +158,13 @@ async def check_vehicle_availability(
     return results
 
 
-@router.post("/fleet", response_model=VehicleOut, status_code=201)
-async def add_vehicle(body: VehicleCreate, session: AsyncSession = Depends(get_tenant_db)):
+@router.post(
+    "/fleet",
+    response_model=VehicleOut,
+    status_code=201,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
+async def add_vehicle(body: VehicleCreate, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     existing = await session.execute(
         select(Resource).where(
             Resource.resource_type == "vehicle",
@@ -156,23 +174,30 @@ async def add_vehicle(body: VehicleCreate, session: AsyncSession = Depends(get_t
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Vehicle '{body.code}' already exists.")
 
+    vehicle_attrs = body.attributes.model_dump()
+    if body.name_ar:
+        vehicle_attrs["_name_ar"] = body.name_ar
     vehicle = Resource(
         resource_type="vehicle",
         code=body.code,
         name=body.name,
-        name_ar=body.name_ar,
-        is_active=True,
-        attributes=body.attributes.model_dump(),
+        status="AVAILABLE",
+        attributes=vehicle_attrs,
     )
     session.add(vehicle)
     await session.commit()
     return _resource_to_out(vehicle)
 
 
-@router.patch("/fleet/{vehicle_id}", response_model=VehicleOut)
+@router.patch(
+    "/fleet/{vehicle_id}",
+    response_model=VehicleOut,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
 async def update_vehicle(
     vehicle_id: uuid.UUID,
     body: VehicleUpdate,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     vehicle = await session.get(Resource, vehicle_id)
@@ -181,24 +206,28 @@ async def update_vehicle(
 
     if body.name is not None:
         vehicle.name = body.name
-    if body.name_ar is not None:
-        vehicle.name_ar = body.name_ar
     if body.is_active is not None:
-        vehicle.is_active = body.is_active
+        vehicle.status = "INACTIVE" if not body.is_active else "AVAILABLE"
     if body.attributes is not None:
         vehicle.attributes = {**(vehicle.attributes or {}), **body.attributes.model_dump(exclude_none=True)}
+    if body.name_ar is not None:
+        vehicle.attributes = {**(vehicle.attributes or {}), "_name_ar": body.name_ar}
 
     await session.commit()
     return _resource_to_out(vehicle)
 
 
-@router.delete("/fleet/{vehicle_id}", status_code=204)
-async def deactivate_vehicle(vehicle_id: uuid.UUID, session: AsyncSession = Depends(get_tenant_db)):
+@router.delete(
+    "/fleet/{vehicle_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
+async def deactivate_vehicle(vehicle_id: uuid.UUID, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     """Soft-delete: sets is_active=False. Active rental cases are NOT cancelled —
     this only removes the vehicle from future availability/booking searches
     (mirrors hospitality's deactivate_room)."""
     vehicle = await session.get(Resource, vehicle_id)
     if not vehicle or vehicle.resource_type != "vehicle":
         raise HTTPException(status_code=404, detail="Vehicle not found.")
-    vehicle.is_active = False
+    vehicle.status = "INACTIVE"
     await session.commit()

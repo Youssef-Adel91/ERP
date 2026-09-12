@@ -12,7 +12,9 @@ import logging
 import uuid
 from decimal import Decimal
 
-from app.core.db.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, InvoiceCreatedEvent, get_event_bus
 from app.modules.cases.models.core import Case, CaseType
 from app.plugins.rental.services.inspection import diff_inspections
@@ -77,18 +79,33 @@ async def _post_return_revenue(
     if tax_amount > 0:
         line_items.append({"description": "ضريبة القيمة المضافة", "amount": float(tax_amount)})
 
+    # NOTE: app/modules/accounting/events.py's handle_invoice_created() —
+    # the ONLY subscriber of "invoice.created" — requires "invoice_number"
+    # and "amount" in the payload (silently aborts with a logged error,
+    # never raises, if either is missing) and reads the AR account code
+    # from "ar_account_code" (receivable_account_code is kept for other
+    # tooling but the handler itself ignores it). Discovered via live
+    # verification: case.data["gl_revenue_posted"] was set to True by this
+    # listener even though the downstream JournalEntry was silently never
+    # created — the flag only reflects that WE published the event, not
+    # that accounting successfully processed it.
+    customer_name = case.data.get("renter_name_ar") or case.data.get("renter_name") or str(case.id)
     await event_bus.publish(
         InvoiceCreatedEvent(
             tenant_id=tenant_id,
             payload={
                 "source": "rental_plugin",
                 "source_id": str(case.id),
+                "invoice_id": str(case.id),
+                "invoice_number": f"RENT-{case.id.hex[:8].upper()}-RET",
+                "customer_name": customer_name,
                 "entry_type": "vehicle_rental_revenue",
-                "description": f"Vehicle Rental Return — {case.data.get('renter_name_ar') or case.data.get('renter_name')}",
+                "description": f"Vehicle Rental Return — {customer_name}",
                 "amount": float(grand_total),
                 "currency": case.data.get("currency", "EGP"),
                 "revenue_account_code": revenue_account,
                 "receivable_account_code": receivable_account,
+                "ar_account_code": receivable_account,
                 "entry_date": date.today().isoformat(),
                 "line_items": line_items,
             },
@@ -107,8 +124,42 @@ async def _post_return_revenue(
     session.add(case)
 
 
+async def _mark_posting_failed(tenant_id: str, case_id_str: str, to_stage: str, exc: Exception) -> None:
+    """Best-effort, separate-connection write of the posting_failed flag —
+    used whenever we can't trust the session that just raised (it may be in
+    a broken state) or don't have one at all."""
+    try:
+        async with tenant_session(tenant_id) as fail_session:
+            failed_case = await fail_session.get(Case, uuid.UUID(case_id_str))
+            if failed_case:
+                failed_case.data = {
+                    **failed_case.data,
+                    "posting_failed": True,
+                    "posting_error": f"{type(exc).__name__}: {exc}"[:500],
+                    "posting_failed_stage": to_stage,
+                }
+                fail_session.add(failed_case)
+    except Exception:
+        logger.exception(
+            "Rental listener: failed to record posting_failed flag for case %s",
+            case_id_str,
+        )
+
+
 @event_bus.subscribe("case.stage.transitioned")
-async def handle_rental_stage_transitioned(event: DomainEvent) -> None:
+async def handle_rental_stage_transitioned(event: DomainEvent, session: AsyncSession | None = None) -> None:
+    """
+    `session`: EventBus.publish() passes its caller's own session automatically
+    whenever this handler's signature accepts a `session` kwarg. We MUST prefer
+    that session over opening a fresh tenant_session() when one is available:
+    the Case Engine's transition_case() only *flushes* the case's data changes
+    (e.g. return-inspection fields set in the very same API call that moves
+    the case to "returned") — the caller commits afterwards. A brand-new
+    tenant_session() opens a separate DB connection/transaction, and under
+    Postgres's default READ COMMITTED isolation it would NOT see those
+    flushed-but-uncommitted changes. See recruitment/listeners.py for the
+    reference implementation of this pattern.
+    """
     payload = event.payload
     if payload.get("plugin_key") != "rental":
         return
@@ -118,20 +169,64 @@ async def handle_rental_stage_transitioned(event: DomainEvent) -> None:
         return
 
     case_id_str = payload.get("case_id")
-    async with AsyncSessionLocal() as session:
-        try:
-            tenant_id = event.tenant_id
-            tenant_schema = f"tenant_{tenant_id.replace('-', '')}"
-            await session.execute(f"SET search_path TO {tenant_schema}")
+    if not case_id_str:
+        return
 
+    tenant_id = event.tenant_id
+    if not tenant_id:
+        logger.warning(
+            "Rental listener: event for case %s carries no tenant_id — cannot "
+            "resolve tenant schema, skipping financial posting.", case_id_str,
+        )
+        return
+
+    if session is not None:
+        # Fast path — reuse the caller's already tenant-scoped session so we
+        # can see flushed-but-uncommitted changes from the same request.
+        try:
             case = await session.get(Case, uuid.UUID(case_id_str))
-            if not case: return
-            
+            if not case:
+                logger.warning("Rental listener: Case %s not found", case_id_str)
+                return
             ct = await session.get(CaseType, case.case_type_id)
-            if not ct: return
+            if not ct:
+                logger.warning("Rental listener: CaseType not found for case %s", case_id_str)
+                return
 
             await _post_return_revenue(session, case, ct, tenant_id)
-            await session.commit()
-        except Exception:
-            logger.exception("Rental listener failed")
-            await session.rollback()
+            logger.info(
+                "Rental financial hook completed for case %s → %s (shared-session path)",
+                case_id_str, to_stage,
+            )
+            # No manual commit/rollback — the caller owns this session's
+            # transaction boundary.
+        except Exception as exc:
+            logger.exception(
+                "Rental listener failed for case %s stage %s (shared-session "
+                "path) — marking posting_failed on the case for visibility.",
+                case_id_str, to_stage,
+            )
+            await _mark_posting_failed(tenant_id, case_id_str, to_stage, exc)
+        return
+
+    # Fallback path — no session was supplied (e.g. a future outbox-worker
+    # driven dispatch, rather than the synchronous in-process EventBus path).
+    try:
+        async with tenant_session(tenant_id) as fresh_session:
+            case = await fresh_session.get(Case, uuid.UUID(case_id_str))
+            if not case:
+                logger.warning("Rental listener: Case %s not found", case_id_str)
+                return
+
+            ct = await fresh_session.get(CaseType, case.case_type_id)
+            if not ct:
+                logger.warning("Rental listener: CaseType not found for case %s", case_id_str)
+                return
+
+            await _post_return_revenue(fresh_session, case, ct, tenant_id)
+        logger.info(
+            "Rental financial hook completed for case %s → %s", case_id_str, to_stage
+        )
+    except Exception as exc:
+        logger.exception("Rental listener failed for case %s", case_id_str)
+        await _mark_posting_failed(tenant_id, case_id_str, to_stage, exc)

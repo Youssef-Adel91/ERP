@@ -18,6 +18,7 @@ import {
   PackageCheck,
   PackageX,
   PackageMinus,
+  UserSearch,
 } from "lucide-react";
 
 // ── Types (mirrors backend app/modules/trust/api.py) ──────────────────────────
@@ -28,6 +29,17 @@ interface ReputationResult {
   band: RiskBand;
   explanation: string;
   distinct_tenant_count: number;
+}
+
+// Mirrors backend app/modules/reporting/service.py::get_customer_trust_profile
+// (Phase F) — exposed via GET /reporting/customer-trust.
+interface CustomerTrustProfile {
+  found: boolean;
+  message?: string;
+  customer_name?: string;
+  band?: RiskBand;
+  explanation?: string;
+  distinct_tenant_count?: number;
 }
 
 const bandMeta: Record<RiskBand, { label: string; icon: React.ElementType; classes: string }> = {
@@ -72,7 +84,110 @@ export default function TrustNetworkPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter items-start">
         <LookupCard />
         <ContributionCard />
+        <NameLookupCard />
       </div>
+    </div>
+  );
+}
+
+// ── Name-based lookup card (Phase F: resolves via this tenant's own Contacts) ──
+
+const nameLookupSchema = z.object({
+  customer_name: z.string().min(2, "اكتب اسم العميل"),
+});
+type NameLookupForm = z.infer<typeof nameLookupSchema>;
+
+function NameLookupCard() {
+  const [result, setResult] = useState<CustomerTrustProfile | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const { register, handleSubmit, formState: { errors } } = useForm<NameLookupForm>({
+    resolver: zodResolver(nameLookupSchema),
+    defaultValues: { customer_name: "" },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (data: NameLookupForm) => {
+      const res = await apiClient.get<CustomerTrustProfile>("/reporting/customer-trust", {
+        params: { customer_name: data.customer_name },
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setErrorMsg("");
+      setResult(data);
+    },
+    onError: (err: AxiosError<{ detail?: string }>) => {
+      setResult(null);
+      setErrorMsg(pickDetail(err, "تعذر الاستعلام عن تقييم العميل."));
+    },
+  });
+
+  const onSubmit = (data: NameLookupForm) => mutation.mutate(data);
+  const meta = result?.found && result.band ? bandMeta[result.band] : null;
+
+  return (
+    <div className="glass-card rounded-xl p-card-padding space-y-5 lg:col-span-2">
+      <div className="flex items-center gap-2">
+        <div className="w-9 h-9 rounded-lg bg-primary-container/10 text-primary flex items-center justify-center">
+          <UserSearch className="w-4 h-4" />
+        </div>
+        <div>
+          <h2 className="font-headline-sm text-headline-sm text-on-surface">الاستعلام بالاسم (عبر البوت الذكي)</h2>
+          <p className="text-body-sm text-on-surface-variant">
+            يبحث عن العميل في جهات الاتصال الخاصة بك أولاً، ثم يستعلم عن رقم هاتفه في شبكة الثقة — نفس
+            المحرك المستخدم بالأعلى، بدون الحاجة لمعرفة رقم الهاتف مسبقًا.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="flex items-start gap-3">
+        <div className="flex-1 space-y-1.5">
+          <input
+            {...register("customer_name")}
+            placeholder="اسم العميل، مثلاً: أحمد محمد"
+            className="input-field"
+          />
+          {errors.customer_name && <p className="text-body-sm text-error">{errors.customer_name.message}</p>}
+        </div>
+        <button
+          type="submit"
+          disabled={mutation.isPending}
+          className="h-11 px-5 rounded-lg bg-primary text-on-primary font-bold text-body-md flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-70 shrink-0"
+        >
+          {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserSearch className="w-4 h-4" />}
+          استعلام
+        </button>
+      </form>
+
+      {errorMsg && (
+        <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg text-body-sm font-medium border border-error">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
+        </div>
+      )}
+
+      {result && !result.found && (
+        <div className="rounded-xl border border-outline-variant border-dashed p-4 text-body-sm text-on-surface-variant text-center">
+          {result.message}
+        </div>
+      )}
+
+      {result && result.found && meta && (
+        <div className={`rounded-xl border p-4 flex items-start gap-3 ${meta.classes}`}>
+          <meta.icon className="w-6 h-6 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-headline-sm text-headline-sm">{result.customer_name}</span>
+              <span className="text-body-sm opacity-80">— {meta.label}</span>
+              <span className="text-body-sm opacity-80 font-data-mono" dir="ltr">({result.band})</span>
+            </div>
+            <p className="text-body-sm opacity-90">{result.explanation}</p>
+            <p className="text-body-sm opacity-70">
+              عدد التجار المساهمين: <span className="font-data-mono" dir="ltr">{result.distinct_tenant_count}</span>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

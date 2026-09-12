@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { AxiosError } from "axios";
+import { apiClient, pickDetail } from "@/lib/api-client";
 import {
   Plane,
   Loader2,
@@ -14,6 +15,7 @@ import {
   ArrowUpRight,
   Package,
   Stamp,
+  FileDown,
 } from "lucide-react";
 import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
 
@@ -118,6 +120,34 @@ export default function TravelPage() {
 
   const upcoming = visible.filter((b) => b.start_date && b.start_date >= new Date().toISOString().slice(0, 10)).slice(0, 5);
 
+  // PDF download — was previously a plain <a href target="_blank"> straight
+  // to the API URL, which never carried the Authorization bearer header
+  // (this app authenticates via a bearer token in localStorage, not
+  // cookies — see src/lib/api-client.ts) and so always 401'd when clicked.
+  // Fixed to the same blob-download pattern already used for invoice PDFs
+  // in app/dashboard/sales/page.tsx.
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState("");
+  const pdfMutation = useMutation({
+    mutationFn: async (booking: TravelBooking) => {
+      const res = await apiClient.get(`/travel/bookings/${booking.id}/pdf`, { responseType: "blob" });
+      return { booking, blob: res.data as Blob };
+    },
+    onMutate: (booking) => { setPdfError(""); setPdfDownloadingId(booking.id); },
+    onSuccess: ({ booking, blob }) => {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `booking_${booking.id.slice(0, 8)}_confirmation.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    },
+    onError: (err: AxiosError<{ detail?: string }>) => setPdfError(pickDetail(err, "تعذر تحميل تأكيد الحجز.")),
+    onSettled: () => setPdfDownloadingId(null),
+  });
+
   if (!caseType) {
     return (
       <div className="space-y-gutter">
@@ -181,6 +211,12 @@ export default function TravelPage() {
 
       <ExpirationAlertsWidget />
 
+      {pdfError && (
+        <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg text-body-sm font-medium border border-error">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {pdfError}
+        </div>
+      )}
+
       <label className="flex items-center gap-2 text-body-sm text-on-surface-variant w-fit">
         <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
         إظهار المغلقة والملغاة
@@ -226,9 +262,24 @@ export default function TravelPage() {
                         {fin ? egp(fin.total_margin) : "—"}
                       </td>
                       <td className="px-6 py-4">
-                        <Link href={`/dashboard/cases/${b.id}`} className="flex items-center gap-1.5 text-primary font-semibold text-body-sm hover:underline">
-                          التفاصيل <ArrowUpRight className="w-3.5 h-3.5" />
-                        </Link>
+                        <div className="flex items-center gap-3">
+                          <Link href={`/dashboard/cases/${b.id}`} className="flex items-center gap-1.5 text-primary font-semibold text-body-sm hover:underline">
+                            التفاصيل <ArrowUpRight className="w-3.5 h-3.5" />
+                          </Link>
+                          <button
+                            onClick={() => pdfMutation.mutate(b)}
+                            disabled={pdfDownloadingId === b.id}
+                            className="flex items-center gap-1.5 text-on-surface-variant font-semibold text-body-sm hover:text-on-surface disabled:opacity-50"
+                            title="تحميل تأكيد الحجز PDF"
+                          >
+                            {pdfDownloadingId === b.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <FileDown className="w-3.5 h-3.5" />
+                            )}{" "}
+                            PDF
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

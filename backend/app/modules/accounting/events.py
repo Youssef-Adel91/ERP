@@ -25,13 +25,13 @@ Error handling:
 """
 
 import logging
-from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, get_event_bus
-from app.modules.accounting.models import JournalEntry, JournalEntryStatus, TransactionLine
+from app.modules.accounting.models import JournalEntryStatus
+from app.modules.accounting.services.journal import create_journal_entry
 
 logger = logging.getLogger(__name__)
 
@@ -114,68 +114,77 @@ async def handle_invoice_created(event: DomainEvent) -> None:
         return
 
     # ── Open tenant-scoped DB session ─────────────────────────────────────────
-    async with tenant_session(event.tenant_id) as session:
-        try:
-            now = datetime.now(UTC).replace(tzinfo=None)
+    #
+    # IMPORTANT — discovered via live verification (11 Sep 2026): the manual
+    # JournalEntry/TransactionLine(=JournalEntryLine) construction that used
+    # to live here set only `account_code` (a plain string) on each line and
+    # never resolved it to `account_id` — but JournalEntryLine.account_id is
+    # a NOT NULL foreign key to tenant.accounts.id. Every single invoice
+    # posted through this handler was therefore failing with a Postgres
+    # IntegrityError (NotNullViolationError on journal_entry_lines.account_id)
+    # AFTER already logging "✅ Journal entry ... committed" (that log line
+    # ran before the session actually flushed/committed, so it was lying).
+    # The EventBus swallows the exception, so this looked like total success
+    # from every angle except the database itself.
+    #
+    # Fix: delegate to app.modules.accounting.services.journal.create_journal_entry
+    # — the same well-tested service the GL Bridge
+    # (app/modules/accounting/consumers/events.py) already uses successfully
+    # for sales/inventory events. It resolves account_code → account_id via
+    # a real Account lookup, asserts SUM(debits) == SUM(credits), validates
+    # an open AccountingPeriod exists for entry_date, and commits atomically.
+    try:
+        entry_date_str = payload.get("entry_date")
+        from datetime import date as _date
+        entry_date = _date.fromisoformat(entry_date_str) if entry_date_str else _date.today()
 
-            # ── INSERT JournalEntry ────────────────────────────────────────────────
-            entry = JournalEntry(
-                reference=f"JE-{invoice_number}",
+        async with tenant_session(event.tenant_id) as session:
+            entry = await create_journal_entry(
+                session=session,
                 description=f"Sales invoice for {customer} — {invoice_number}",
-                status=JournalEntryStatus.POSTED,   # Auto-post event-driven entries
+                entry_date=entry_date,
+                lines_data=[
+                    {
+                        "account_code": ar_code,
+                        "account_name": "Accounts Receivable",
+                        "debit": amount,
+                        "credit": Decimal("0.0000"),
+                        "description": f"Receivable: {customer} / {invoice_number}",
+                    },
+                    {
+                        "account_code": rev_code,
+                        "account_name": "Sales Revenue",
+                        "debit": Decimal("0.0000"),
+                        "credit": amount,
+                        "description": f"Revenue recognized: {invoice_number}",
+                    },
+                ],
+                reference=f"JE-{invoice_number}",
+                reference_id=UUID(source_id_str) if source_id_str else None,
                 source_type="invoice",
                 source_id=UUID(source_id_str) if source_id_str else None,
-                created_by=(
-                    UUID(payload["created_by_user_id"])
-                    if payload.get("created_by_user_id")
-                    else None
-                ),
-                posted_at=now,
-            )
-            session.add(entry)
-            await session.flush()  # Materialise entry.id for FK reference in lines
-
-            # ── INSERT TransactionLine 1: DEBIT Accounts Receivable ───────────────
-            debit_line = TransactionLine(
-                journal_entry_id=entry.id,
-                account_code=ar_code,
-                account_name="Accounts Receivable",
-                debit=amount,
-                credit=Decimal("0.0000"),
-                description=f"Receivable: {customer} / {invoice_number}",
-            )
-            session.add(debit_line)
-
-            # ── INSERT TransactionLine 2: CREDIT Sales Revenue ────────────────────
-            credit_line = TransactionLine(
-                journal_entry_id=entry.id,
-                account_code=rev_code,
-                account_name="Sales Revenue",
-                debit=Decimal("0.0000"),
-                credit=amount,
-                description=f"Revenue recognized: {invoice_number}",
-            )
-            session.add(credit_line)
-
-            logger.info(
-                "✅ Journal entry '%s' (id=%s) committed to schema 'tenant_%s' | "
-                "DR %s → AR(%s) | CR %s → REV(%s)",
-                entry.reference,
-                entry.id,
-                event.tenant_id.replace("-", "_"),
-                amount,
-                ar_code,
-                amount,
-                rev_code,
+                status=JournalEntryStatus.POSTED,
             )
 
-        except Exception:
-            logger.exception(
-                "❌ DB error while processing invoice.created (event_id=%s, tenant=%s)",
-                event_id_str,
-                event.tenant_id,
-            )
-            raise  # Re-raise so _safe_handler_call logs the full traceback
+        logger.info(
+            "✅ Journal entry '%s' (id=%s) committed to schema 'tenant_%s' | "
+            "DR %s → AR(%s) | CR %s → REV(%s)",
+            entry.reference,
+            entry.id,
+            event.tenant_id.replace("-", "_"),
+            amount,
+            ar_code,
+            amount,
+            rev_code,
+        )
+
+    except Exception:
+        logger.exception(
+            "❌ DB error while processing invoice.created (event_id=%s, tenant=%s)",
+            event_id_str,
+            event.tenant_id,
+        )
+        raise  # Re-raise so _safe_handler_call logs the full traceback
 
 
 # ── Handler: payment.received ─────────────────────────────────────────────────
@@ -216,47 +225,47 @@ async def handle_payment_received(event: DomainEvent) -> None:
         logger.error("❌ handle_payment_received aborted: %s", exc)
         return
 
-    async with tenant_session(event.tenant_id) as session:
-        try:
-            now = datetime.now(UTC).replace(tzinfo=None)
-
-            entry = JournalEntry(
-                reference=f"JE-{payment_ref}",
+    # See the matching comment in handle_invoice_created above: this used to
+    # build JournalEntryLine rows with only `account_code` set, but
+    # `account_id` is a NOT NULL FK — every payment posted here was silently
+    # failing with an IntegrityError after logging a false "✅ ... committed".
+    # Delegates to create_journal_entry() (same service the GL Bridge uses)
+    # which properly resolves account_code → account_id.
+    try:
+        async with tenant_session(event.tenant_id) as session:
+            entry = await create_journal_entry(
+                session=session,
                 description=f"Cash received: {payment_ref}",
-                status=JournalEntryStatus.POSTED,
+                lines_data=[
+                    {
+                        "account_code": cash_code,
+                        "account_name": "Cash & Cash Equivalents",
+                        "debit": amount,
+                        "credit": Decimal("0.0000"),
+                        "description": f"Cash received for {payment_ref}",
+                    },
+                    {
+                        "account_code": ar_code,
+                        "account_name": "Accounts Receivable",
+                        "debit": Decimal("0.0000"),
+                        "credit": amount,
+                        "description": f"Receivable cleared for {payment_ref}",
+                    },
+                ],
+                reference=f"JE-{payment_ref}",
                 source_type="payment",
-                posted_at=now,
+                status=JournalEntryStatus.POSTED,
             )
-            session.add(entry)
-            await session.flush()
 
-            # DR Cash
-            session.add(TransactionLine(
-                journal_entry_id=entry.id,
-                account_code=cash_code,
-                account_name="Cash & Cash Equivalents",
-                debit=amount,
-                credit=Decimal("0.0000"),
-                description=f"Cash received for {payment_ref}",
-            ))
-            # CR Accounts Receivable
-            session.add(TransactionLine(
-                journal_entry_id=entry.id,
-                account_code=ar_code,
-                account_name="Accounts Receivable",
-                debit=Decimal("0.0000"),
-                credit=amount,
-                description=f"Receivable cleared for {payment_ref}",
-            ))
-
-            logger.info(
-                "✅ Payment journal entry '%s' committed (tenant=%s)",
-                entry.reference,
-                event.tenant_id,
-            )
-        except Exception:
-            logger.exception("❌ DB error in handle_payment_received (event_id=%s)", event_id_str)
-            raise
+        logger.info(
+            "✅ Payment journal entry '%s' (id=%s) committed (tenant=%s)",
+            entry.reference,
+            entry.id,
+            event.tenant_id,
+        )
+    except Exception:
+        logger.exception("❌ DB error in handle_payment_received (event_id=%s)", event_id_str)
+        raise
 
 # Import GL Bridge event consumers to register them with the EventBus singleton
 import app.modules.accounting.consumers.events  # noqa: F401, E402

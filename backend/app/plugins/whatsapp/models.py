@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import sqlalchemy as sa
+from sqlalchemy import Column
 from sqlmodel import Field
 
 from app.core.db.base import PublicBase
@@ -56,3 +58,18 @@ class WhatsAppTenantConfig(PublicBase, table=True):
     webhook_verify_token: str | None = Field(default=None, max_length=255)
 
     is_active: bool = Field(default=False)
+
+    # Phone numbers (as sent by Meta in message.from — digits only, no
+    # '+') allowed to talk to the AI Bot over this tenant's WhatsApp
+    # number. Deliberately an explicit allowlist rather than "reply to
+    # anyone who messages this number": that same number also receives
+    # real customer messages, and a customer asking "كام المستحق؟" must
+    # never get back the tenant's own receivables — see
+    # app.plugins.whatsapp.listeners.handle_whatsapp_message_ai_bot,
+    # which checks this list BEFORE calling the AI Bot at all. Empty by
+    # default: the bot is silent over WhatsApp for a tenant until they
+    # explicitly add at least one number via PUT /api/v1/whatsapp/config.
+    authorized_numbers: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(sa.JSON, nullable=False, server_default=sa.text("'[]'::json")),
+    )

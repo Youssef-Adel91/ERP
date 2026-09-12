@@ -10,6 +10,8 @@ import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RevenueTrendChart } from "@/components/dashboard/RevenueTrendChart";
+import { ExpenseBreakdownChart } from "@/components/dashboard/ExpenseBreakdownChart";
 import {
   Users,
   FileDown,
@@ -24,6 +26,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Info,
+  Sparkles,
 } from "lucide-react";
 
 interface DashboardMetrics {
@@ -313,12 +316,33 @@ export default function DashboardPage() {
 
           <ExpirationAlertsWidget />
 
+          {/* ── AI Insights Teaser ───────────────────────────── */}
+          <Link
+            href="/dashboard/insights"
+            className="flex items-center justify-between glass-card rounded-xl p-card-padding shadow-card hover:shadow-overlay hover:-translate-y-0.5 transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary-container/10 rounded-lg">
+                <Sparkles className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h4 className="font-headline-sm text-headline-sm">رؤى الذكاء الاصطناعي</h4>
+                <p className="text-body-sm text-on-surface-variant">
+                  اسأل المساعد الذكي عن أرقامك، وشوف تحليل الإيرادات وأكبر العملاء والفواتير المتأخرة في مكان واحد.
+                </p>
+              </div>
+            </div>
+            <span className="text-primary text-body-sm font-bold group-hover:underline shrink-0">
+              افتح اللوحة
+            </span>
+          </Link>
+
           {/* ── Charts Row ───────────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
             <div className="lg:col-span-2">
-              <DemoDataNotice title="ترند الإيرادات السنوية" />
+              <RevenueTrendChart months={6} />
             </div>
-            <DemoDataNotice title="توزيع المصروفات" />
+            <ExpenseBreakdownChart />
           </div>
 
           {/* ── Branch Performance ───────────────────────────── */}

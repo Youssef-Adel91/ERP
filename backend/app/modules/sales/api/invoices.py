@@ -344,7 +344,11 @@ async def post_sales_invoice(
     session: AsyncSession = Depends(get_tenant_db),
 ) -> SalesInvoice:
     try:
-        invoice = await post_invoice(session=session, invoice_id=invoice_id)
+        invoice = await post_invoice(
+            session=session,
+            invoice_id=invoice_id,
+            tenant_id=current_user.tenant_id,
+        )
         await session.commit()
         return invoice
     except ValueError as exc:

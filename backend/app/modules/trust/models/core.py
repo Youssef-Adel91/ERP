@@ -53,9 +53,15 @@ class GlobalReputation(SQLModel, table=True):
     )
     band: TrustRiskBand = Field(default=TrustRiskBand.UNKNOWN)
 
+    # NOTE (Phase F fix, 2026-09-11): the column has no timezone=True, so it
+    # is a naive TIMESTAMP WITHOUT TIME ZONE — a tz-aware default_factory
+    # value made every INSERT/UPDATE fail with asyncpg's "can't subtract
+    # offset-naive and offset-aware datetimes" (a live 500 discovered while
+    # verifying Phase F). Stored values are still real UTC instants; only
+    # the tzinfo marker is dropped to match what the column can hold.
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)}
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC).replace(tzinfo=None)}
     )
 
 
@@ -83,4 +89,8 @@ class TrustContribution(SQLModel, table=True):
     )
     is_disputed: bool = Field(default=False)
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # NOTE (Phase F fix, 2026-09-11): same naive-column fix as
+    # GlobalReputation.updated_at above — this is also what
+    # check_reciprocity_gate (app.modules.trust.services.gates) compares
+    # against, so both sides must agree on naive UTC.
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))

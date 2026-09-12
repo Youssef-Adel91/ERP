@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
 from app.modules.cases.models.core import Case
+from app.modules.system.dependencies import CurrentUser
 from app.plugins.rental.models.inspection import FuelLevel, InspectionType, VehicleInspection
 from app.plugins.rental.services.inspection import diff_inspections, InspectionDiff
 
@@ -53,6 +54,7 @@ class InspectionOut(BaseModel):
 async def create_inspection(
     case_id: uuid.UUID,
     body: InspectionCreate,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     case = await session.get(Case, case_id)
@@ -105,6 +107,7 @@ async def create_inspection(
 @router.get("/cases/{case_id}/inspections", response_model=list[InspectionOut])
 async def list_inspections(
     case_id: uuid.UUID,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     stmt = select(VehicleInspection).where(VehicleInspection.case_id == case_id)
@@ -129,6 +132,7 @@ async def list_inspections(
 @router.get("/cases/{case_id}/inspections/diff", response_model=InspectionDiff)
 async def get_inspection_diff(
     case_id: uuid.UUID,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     case = await session.get(Case, case_id)

@@ -24,7 +24,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import require_role
 from app.modules.cases.models.core import Case, Resource
+from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import UserRole
 
 router = APIRouter(prefix="/hospitality", tags=["Hospitality – Rooms"])
 
@@ -81,13 +84,23 @@ class RoomAvailabilityOut(RoomOut):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _resource_to_out(r: Resource) -> dict:
+    attrs = dict(r.attributes or {})
+    # Resource has neither a boolean is_active column nor a name_ar column —
+    # only id/resource_type/name/code/status/attributes exist on the real
+    # table. Both are stored inside the JSONB `attributes` dict under a
+    # reserved "_name_ar" key (status handles is_active, see below) so no
+    # schema migration is needed. Excluded from the public `attributes` echo.
+    name_ar = attrs.pop("_name_ar", None)
     return {
         "id": str(r.id),
         "code": r.code,
         "name": r.name,
-        "name_ar": r.name_ar,
-        "is_active": r.is_active,
-        "attributes": r.attributes or {},
+        "name_ar": name_ar,
+        # ResourceStatus: AVAILABLE/OCCUPIED/MAINTENANCE — this module treats
+        # a "INACTIVE" status string as the soft-delete marker, the closest
+        # equivalent that doesn't require a schema migration.
+        "is_active": r.status != "INACTIVE",
+        "attributes": attrs,
     }
 
 
@@ -95,6 +108,7 @@ def _resource_to_out(r: Resource) -> dict:
 
 @router.get("/rooms", response_model=list[RoomOut])
 async def list_rooms(
+    current_user: CurrentUser,
     room_type: str | None = Query(None),
     floor: int | None = Query(None),
     min_capacity: int | None = Query(None),
@@ -102,10 +116,8 @@ async def list_rooms(
     session: AsyncSession = Depends(get_tenant_db),
 ):
     """List hotel rooms with optional filtering by type, floor, and capacity."""
-    stmt = select(Resource).where(
-        Resource.resource_type == "room",
-        Resource.is_active == is_active,
-    )
+    stmt = select(Resource).where(Resource.resource_type == "room")
+    stmt = stmt.where(Resource.status != "INACTIVE") if is_active else stmt.where(Resource.status == "INACTIVE")
     rooms = (await session.scalars(stmt)).all()
 
     # Apply JSONB attribute filters in Python (avoids vendor-specific JSON SQL)
@@ -125,6 +137,7 @@ async def list_rooms(
 
 @router.get("/rooms/availability", response_model=list[RoomAvailabilityOut])
 async def check_room_availability(
+    current_user: CurrentUser,
     check_in: str = Query(..., description="ISO date, e.g. 2024-12-25"),
     check_out: str = Query(..., description="ISO date, e.g. 2024-12-28"),
     min_capacity: int = Query(1),
@@ -150,7 +163,7 @@ async def check_room_availability(
     # Fetch all active rooms
     stmt = select(Resource).where(
         Resource.resource_type == "room",
-        Resource.is_active == True,
+        Resource.status != "INACTIVE",
     )
     rooms = (await session.scalars(stmt)).all()
 
@@ -188,15 +201,20 @@ async def check_room_availability(
 
 
 @router.get("/rooms/{room_id}", response_model=RoomOut)
-async def get_room(room_id: uuid.UUID, session: AsyncSession = Depends(get_tenant_db)):
+async def get_room(room_id: uuid.UUID, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     room = await session.get(Resource, room_id)
     if not room or room.resource_type != "room":
         raise HTTPException(status_code=404, detail="Room not found.")
     return _resource_to_out(room)
 
 
-@router.post("/rooms", response_model=RoomOut, status_code=201)
-async def create_room(body: RoomCreate, session: AsyncSession = Depends(get_tenant_db)):
+@router.post(
+    "/rooms",
+    response_model=RoomOut,
+    status_code=201,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
+async def create_room(body: RoomCreate, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     """Create a new hotel room. The room code must be unique within the tenant."""
     existing = await session.execute(
         select(Resource).where(
@@ -207,13 +225,15 @@ async def create_room(body: RoomCreate, session: AsyncSession = Depends(get_tena
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Room '{body.code}' already exists.")
 
+    room_attrs = body.attributes.model_dump()
+    if body.name_ar:
+        room_attrs["_name_ar"] = body.name_ar
     room = Resource(
         resource_type="room",
         code=body.code,
         name=body.name,
-        name_ar=body.name_ar,
-        is_active=True,
-        attributes=body.attributes.model_dump(),
+        status="AVAILABLE",
+        attributes=room_attrs,
     )
     session.add(room)
     await session.flush()
@@ -221,10 +241,15 @@ async def create_room(body: RoomCreate, session: AsyncSession = Depends(get_tena
     return _resource_to_out(room)
 
 
-@router.patch("/rooms/{room_id}", response_model=RoomOut)
+@router.patch(
+    "/rooms/{room_id}",
+    response_model=RoomOut,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
 async def update_room(
     room_id: uuid.UUID,
     body: RoomUpdate,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     room = await session.get(Resource, room_id)
@@ -233,22 +258,26 @@ async def update_room(
 
     if body.name is not None:
         room.name = body.name
-    if body.name_ar is not None:
-        room.name_ar = body.name_ar
     if body.is_active is not None:
-        room.is_active = body.is_active
+        room.status = "INACTIVE" if not body.is_active else "AVAILABLE"
     if body.attributes is not None:
         room.attributes = {**(room.attributes or {}), **body.attributes.model_dump(exclude_none=True)}
+    if body.name_ar is not None:
+        room.attributes = {**(room.attributes or {}), "_name_ar": body.name_ar}
 
     await session.commit()
     return _resource_to_out(room)
 
 
-@router.delete("/rooms/{room_id}", status_code=204)
-async def deactivate_room(room_id: uuid.UUID, session: AsyncSession = Depends(get_tenant_db)):
+@router.delete(
+    "/rooms/{room_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
+async def deactivate_room(room_id: uuid.UUID, current_user: CurrentUser, session: AsyncSession = Depends(get_tenant_db)):
     """Soft-delete: sets is_active=False. Active reservations are NOT cancelled."""
     room = await session.get(Resource, room_id)
     if not room or room.resource_type != "room":
         raise HTTPException(status_code=404, detail="Room not found.")
-    room.is_active = False
+    room.status = "INACTIVE"
     await session.commit()

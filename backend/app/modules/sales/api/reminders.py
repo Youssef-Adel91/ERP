@@ -33,6 +33,6 @@ async def run_overdue_reminders(
     current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ) -> RunRemindersResponse:
-    await process_overdue_reminders(session)
+    await process_overdue_reminders(session, tenant_id=current_user.tenant_id)
     await session.commit()
     return RunRemindersResponse()

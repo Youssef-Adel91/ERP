@@ -14,6 +14,20 @@ Two supported flows:
      fully real here: content-hash tamper detection, segregation-of-duties
      enforcement (a creator can never approve their own request), and an
      immutable decision audit trail — all backed by the existing service.
+
+Level 4 addition (2026-09-11): document_type "ai_drafted_message"
+(app.modules.ai.models.AIDraftedMessage) is now registered in
+_resolve_document_model, so its `state` is synced the same way
+purchase_order's is. On a successful APPROVE decision for this document
+type specifically, decide() also publishes an "ai_draft.approved" domain
+event — using the SAME not-yet-committed session, so the EventBus's
+in-process "memory" backend dispatches the WhatsApp send listener
+synchronously within this same transaction (see
+app.core.events.event_bus's module docstring on why the handler must
+receive this exact session, not open its own — the established fix for
+the session-isolation bug class documented in this project's lessons
+learned). Nothing is ever sent to a customer except as a direct
+consequence of a real recorded APPROVE decision made here.
 """
 from __future__ import annotations
 
@@ -27,6 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.events.event_bus import DomainEvent, get_event_bus
 from app.core.models.mixins import DocumentLifecycleMixin, compute_content_hash
 from app.modules.approvals.models.core import (
     ApprovalDecision,
@@ -47,6 +62,8 @@ from app.modules.system.dependencies import CurrentUser
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
 
+event_bus = get_event_bus()
+
 # Document types whose model has adopted DocumentLifecycleMixin (see
 # app/core/models/mixins.py) and therefore has its `state` synced back to
 # APPROVED/DRAFT here when a decision is recorded. A document_type NOT in
@@ -54,12 +71,16 @@ router = APIRouter(prefix="/approvals", tags=["Approvals"])
 # just has no source-module state of its own to sync (per this module's
 # original "generic requests" design, see this file's module docstring).
 # Registered lazily (inside decide(), not at import time) to avoid a
-# hard import-time dependency from approvals -> purchasing.
+# hard import-time dependency from approvals -> purchasing/ai.
 def _resolve_document_model(document_type: str) -> type[DocumentLifecycleMixin] | None:
     if document_type == "purchase_order":
         from app.modules.purchasing.models.core import PurchaseOrder
 
         return PurchaseOrder
+    if document_type == "ai_drafted_message":
+        from app.modules.ai.models import AIDraftedMessage
+
+        return AIDraftedMessage
     return None
 
 
@@ -227,10 +248,17 @@ async def decide(
     regardless of role.
 
     For document types whose model has adopted `DocumentLifecycleMixin`
-    (currently: `purchase_order`), this also syncs the source document's
-    `state` — APPROVE -> APPROVED, REJECT -> back to DRAFT so it can be
-    edited and resubmitted. Other document types only get the audited
-    decision recorded here, with no source-module state to sync.
+    (currently: `purchase_order`, `ai_drafted_message`), this also syncs
+    the source document's `state` — APPROVE -> APPROVED, REJECT -> back to
+    DRAFT so it can be edited and resubmitted. Other document types only
+    get the audited decision recorded here, with no source-module state
+    to sync.
+
+    For `ai_drafted_message` specifically, a successful APPROVE also
+    publishes "ai_draft.approved" on the EventBus using THIS session
+    (before commit) — see this module's docstring for why that's what
+    makes app.plugins.whatsapp.listeners.handle_ai_draft_approved see the
+    just-approved row.
     """
     approval_request = await session.get(ApprovalRequest, id)
     if not approval_request:
@@ -250,6 +278,20 @@ async def decide(
             comment=data.comment,
             document=document,
         )
+
+        if (
+            approval_request.document_type == "ai_drafted_message"
+            and data.decision == DecisionType.APPROVE
+        ):
+            await event_bus.publish(
+                DomainEvent(
+                    event_type="ai_draft.approved",
+                    tenant_id=str(current_user.tenant_id),
+                    payload={"draft_id": str(approval_request.document_id)},
+                ),
+                session=session,
+            )
+
         await session.commit()
         return decision
     except SegregationOfDutiesError as exc:

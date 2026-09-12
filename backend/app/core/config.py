@@ -108,6 +108,34 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str | None = None
     SMTP_FROM_NAME: str = "Nexus ERP"
 
+    # ── AI Provider (app.core.ai.adapter — Copilot / Reporting Bot) ─────────────
+    # Deliberately NOT the vendor `openai` SDK — talks to any
+    # OpenAI-compatible /chat/completions endpoint over plain httpx (already
+    # a dependency), so switching provider is an env-var change, not a code
+    # change or a new dependency:
+    #   Groq   (free tier, OpenAI-compatible) → https://api.groq.com/openai/v1
+    #   OpenAI (paid)                          → https://api.openai.com/v1
+    # AI_API_KEY is None by default: app.core.ai.adapter refuses to attempt a
+    # call when it isn't configured (raises AIProviderNotConfigured, which
+    # app.modules.ai.router turns into a clear Arabic message) rather than
+    # crashing or silently returning a fabricated answer — same discipline
+    # as the Paymob/SMTP/Vault stubs above. Never commit a real key here;
+    # set it via the environment or an untracked .env.
+    AI_PROVIDER: str = "groq"
+    AI_API_KEY: str | None = None
+    AI_BASE_URL: str = "https://api.groq.com/openai/v1"
+    # "llama-3.3-70b-versatile" 404'd as model_not_found against this
+    # account's actual Groq key during live verification (2026-09-11) even
+    # though Groq's own docs still list it — model availability appears to
+    # be account/tier-gated in practice, not just documentation-accurate.
+    # openai/gpt-oss-120b is Groq's own recommended production model for
+    # tool/function-calling use, which is exactly what app.modules.ai.router
+    # needs — switched to it after the above failure; re-verify live after
+    # any future model swap the same way (this account's access can differ
+    # from what the docs list).
+    AI_MODEL: str = "openai/gpt-oss-120b"
+    AI_TIMEOUT_SECONDS: float = 30.0
+
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str | None = None
     OTLP_ENDPOINT: str | None = None

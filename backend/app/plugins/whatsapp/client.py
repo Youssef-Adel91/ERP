@@ -109,5 +109,62 @@ class WhatsAppClient:
 
         return None
 
+    async def send_text_message(
+        self,
+        session: AsyncSession,
+        tenant_id: UUID | str,
+        phone_number: str,
+        text: str,
+    ) -> dict[str, Any] | None:
+        """
+        Sends a free-form (non-template) text message. Meta only allows
+        this within the 24-hour "customer service window" after the user
+        last messaged the business — which is exactly the situation this
+        is used for (app.plugins.whatsapp.listeners.handle_whatsapp_message_ai_bot
+        replying to an inbound message the tenant just sent), so a
+        template isn't needed or appropriate here. Same
+        config-resolution/error-handling discipline as
+        send_template_message above — best-effort, logs and returns None
+        on failure rather than raising, since callers are event listeners.
+        """
+        config = await self._get_active_config(session, tenant_id)
+        if not config:
+            return None
+
+        try:
+            access_token = resolve_access_token(config.access_token_ref)
+        except ValueError as e:
+            logger.error("WhatsApp send aborted for tenant %s: %s", tenant_id, e)
+            return None
+
+        url = f"{self.base_url}/{config.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        clean_phone = phone_number.replace("+", "")
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_phone,
+            "type": "text",
+            "text": {"body": text},
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+                logger.info(
+                    "WhatsApp text reply sent to %s (tenant %s)", clean_phone, tenant_id,
+                )
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error("WhatsApp API error for %s (tenant %s): %s", clean_phone, tenant_id, e.response.text)
+            except httpx.RequestError as e:
+                logger.error("WhatsApp network error (tenant %s): %s", tenant_id, str(e))
+
+        return None
+
 
 whatsapp_client = WhatsAppClient()

@@ -18,8 +18,16 @@ async def check_reciprocity_gate(session: AsyncSession, tenant_id: str, days_tra
     FR-712: Reciprocity Gate
     A tenant cannot read scores if they haven't contributed to the network in the trailing period.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=days_trailing)
-    
+    # NOTE (Phase F fix, 2026-09-11): TrustContribution.created_at is a naive
+    # TIMESTAMP WITHOUT TIME ZONE column (no timezone=True on the model's
+    # sa_column) — comparing it against a tz-aware datetime made asyncpg
+    # reject the query outright ("can't subtract offset-naive and
+    # offset-aware datetimes"), a live 500 discovered while verifying Phase
+    # F end-to-end. Stripping tzinfo here (the value is already computed in
+    # UTC) matches the column instead of changing its type, so no migration
+    # is needed and every existing stored row stays valid.
+    cutoff = (datetime.now(UTC) - timedelta(days=days_trailing)).replace(tzinfo=None)
+
     stmt = (
         select(func.count(TrustContribution.id))
         .where(TrustContribution.tenant_id == tenant_id)

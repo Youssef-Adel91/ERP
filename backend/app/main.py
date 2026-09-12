@@ -11,6 +11,8 @@ Router mount map:
   /api/v1/news/*         → news.router        (Internal Announcements)
   /api/v1/dashboard/*    → dashboard.router   (Real-time KPI Metrics)
   /api/v1/team/*         → team.router        (User/Team Management)
+  /api/v1/ai/ask         → ai.router          (AI Bot — Copilot Level 1 + Level 2)
+  /api/v1/whatsapp/morning-brief/run → whatsapp.api.morning_brief.router (Level 3 — superadmin-triggered)
   /health                → inline             (infrastructure health check)
 
 Middleware stack (applied in registration order, executes in reverse):
@@ -467,6 +469,24 @@ def create_application() -> FastAPI:
         dependencies=[require_plugin("recruitment")],
     )
 
+    # 18b. Recruitment Plugin — Structured Candidate Profiles
+    from app.plugins.recruitment.api_candidates import router as recruitment_candidates_router
+    _app.include_router(
+        recruitment_candidates_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Recruitment Plugin — Candidates"],
+        dependencies=[require_plugin("recruitment")],
+    )
+
+    # 18c. Recruitment Plugin — Interview Scheduling
+    from app.plugins.recruitment.api_interviews import router as recruitment_interviews_router
+    _app.include_router(
+        recruitment_interviews_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Recruitment Plugin — Interviews"],
+        dependencies=[require_plugin("recruitment")],
+    )
+
     # 19. Travel & Tourism Plugin
     from app.plugins.travel.api import router as travel_router
     _app.include_router(
@@ -507,6 +527,15 @@ def create_application() -> FastAPI:
         travel_visas_router,
         prefix=f"{settings.API_V1_PREFIX}",
         tags=["Travel Plugin — Visas"],
+        dependencies=[require_plugin("travel")],
+    )
+
+    # 19d. Travel Plugin — Passengers
+    from app.plugins.travel.api_passengers import router as travel_passengers_router
+    _app.include_router(
+        travel_passengers_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Travel Plugin — Passengers"],
         dependencies=[require_plugin("travel")],
     )
 
@@ -614,6 +643,39 @@ def create_application() -> FastAPI:
         pos_router,
         prefix=f"{settings.API_V1_PREFIX}",
         tags=["Point of Sale"],
+    )
+
+    # 27. AI Bot — Copilot Level 1 (Grounded Retrieval over the typed
+    # reporting layer, app.modules.reporting.service.REPORT_REGISTRY).
+    # Core feature (no plugin_gate) — read-only, tenant-scoped via
+    # get_tenant_db like every other module here.
+    from app.modules.ai.router import router as ai_router
+    _app.include_router(
+        ai_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["AI Bot"],
+    )
+
+    # 28. AI Bot — Copilot Level 3 (automated WhatsApp morning brief).
+    # Cross-tenant admin trigger for app.workers.tasks.main's daily cron
+    # (app.plugins.whatsapp.services.morning_brief.send_all_morning_briefs)
+    # — lets the same fan-out be run/live-verified on demand.
+    from app.plugins.whatsapp.api.morning_brief import router as morning_brief_router
+    _app.include_router(
+        morning_brief_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["WhatsApp AI Bot"],
+    )
+
+    # 29. Reporting API — Phase B (expanded dashboards). Plain REST wrapper
+    # over app.modules.reporting.service, the SAME typed functions the AI
+    # Bot uses via REPORT_REGISTRY — so the dashboard's charts and the AI
+    # Bot's answers are guaranteed to be the same numbers.
+    from app.modules.reporting.router import router as reporting_router
+    _app.include_router(
+        reporting_router,
+        prefix=f"{settings.API_V1_PREFIX}",
+        tags=["Reporting"],
     )
 
     # ── Infrastructure ────────────────────────────────────────────────────────

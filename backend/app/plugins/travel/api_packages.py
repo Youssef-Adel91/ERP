@@ -5,6 +5,11 @@ Endpoints for managing the reusable package catalog (TravelPackage,
 TravelItineraryDay, TravelPackageComponent) and for converting a package
 into a real booking Case. See app/plugins/travel/models/package.py for the
 full rationale.
+
+Changes in this revision (Travel Readiness Wave):
+  - All endpoints now require authentication (CurrentUser).
+  - delete_package: restricted to OWNER/ADMIN; uses soft delete (is_active=False).
+  - create_booking_from_package: restricted to OWNER/ADMIN/SALES.
 """
 from __future__ import annotations
 
@@ -13,14 +18,17 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field as PydanticField
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import require_role
 from app.modules.cases.models.vendor import Vendor
 from app.modules.cases.services.engine import create_case
+from app.modules.system.dependencies import CurrentUser
+from app.modules.system.models import UserRole
 from app.plugins.travel.bootstrap import bootstrap_travel_case_type
 from app.plugins.travel.models.package import (
     TravelItineraryDay,
@@ -210,14 +218,16 @@ async def _load_package_detail(session: AsyncSession, package: TravelPackage) ->
 
 @router.get("", response_model=list[PackageOut])
 async def list_packages(
-    is_active: bool | None = None,
+    current_user: CurrentUser,
+    include_archived: bool = Query(default=False, description="Pass true to include soft-deleted packages"),
     destination: str | None = None,
     category: str | None = None,
     session: AsyncSession = Depends(get_tenant_db),
 ):
+    """Lists travel packages. By default only active packages are returned."""
     q = select(TravelPackage)
-    if is_active is not None:
-        q = q.where(TravelPackage.is_active == is_active)
+    if not include_archived:
+        q = q.where(TravelPackage.is_active == True)  # noqa: E712
     if destination:
         q = q.where(TravelPackage.destination.ilike(f"%{destination}%"))
     if category:
@@ -228,7 +238,11 @@ async def list_packages(
 
 
 @router.post("", response_model=PackageDetailOut, status_code=status.HTTP_201_CREATED)
-async def create_package(body: PackageIn, session: AsyncSession = Depends(get_tenant_db)):
+async def create_package(
+    body: PackageIn,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
     data = body.model_dump(exclude={"itinerary_days", "components"})
     package = TravelPackage(**data)
     session.add(package)
@@ -250,7 +264,11 @@ async def create_package(body: PackageIn, session: AsyncSession = Depends(get_te
 
 
 @router.get("/{package_id}", response_model=PackageDetailOut)
-async def get_package(package_id: UUID, session: AsyncSession = Depends(get_tenant_db)):
+async def get_package(
+    package_id: UUID,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
     package = await session.get(TravelPackage, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="الباقة غير موجودة.")
@@ -258,7 +276,12 @@ async def get_package(package_id: UUID, session: AsyncSession = Depends(get_tena
 
 
 @router.patch("/{package_id}", response_model=PackageDetailOut)
-async def update_package(package_id: UUID, body: PackagePatchIn, session: AsyncSession = Depends(get_tenant_db)):
+async def update_package(
+    package_id: UUID,
+    body: PackagePatchIn,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
     package = await session.get(TravelPackage, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="الباقة غير موجودة.")
@@ -270,12 +293,28 @@ async def update_package(package_id: UUID, body: PackagePatchIn, session: AsyncS
     return await _load_package_detail(session, reloaded)  # type: ignore[arg-type]
 
 
-@router.delete("/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_package(package_id: UUID, session: AsyncSession = Depends(get_tenant_db)):
+@router.delete(
+    "/{package_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))],
+)
+async def delete_package(
+    package_id: UUID,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Soft-deletes a travel package (sets is_active=False).
+    Hard delete is intentionally disallowed — a package may already have live
+    bookings that reference it via package_snapshot. Soft delete preserves the
+    catalog history and the snapshot linkage without breaking existing Cases.
+    Restricted to OWNER and ADMIN.
+    """
     package = await session.get(TravelPackage, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="الباقة غير موجودة.")
-    await session.delete(package)
+    package.is_active = False
+    session.add(package)
     await session.commit()
 
 
@@ -283,7 +322,12 @@ async def delete_package(package_id: UUID, session: AsyncSession = Depends(get_t
 
 
 @router.post("/{package_id}/itinerary-days", response_model=ItineraryDayOut, status_code=status.HTTP_201_CREATED)
-async def add_itinerary_day(package_id: UUID, body: ItineraryDayIn, session: AsyncSession = Depends(get_tenant_db)):
+async def add_itinerary_day(
+    package_id: UUID,
+    body: ItineraryDayIn,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
     package = await session.get(TravelPackage, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="الباقة غير موجودة.")
@@ -320,7 +364,12 @@ async def delete_itinerary_day(day_id: UUID, session: AsyncSession = Depends(get
 
 
 @router.post("/{package_id}/components", response_model=ComponentOut, status_code=status.HTTP_201_CREATED)
-async def add_component(package_id: UUID, body: ComponentIn, session: AsyncSession = Depends(get_tenant_db)):
+async def add_component(
+    package_id: UUID,
+    body: ComponentIn,
+    current_user: CurrentUser,
+    session: AsyncSession = Depends(get_tenant_db),
+):
     package = await session.get(TravelPackage, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="الباقة غير موجودة.")
@@ -365,11 +414,16 @@ async def delete_component(component_id: UUID, session: AsyncSession = Depends(g
 # ── Create Booking From Package ───────────────────────────────────────────────
 
 
-@router.post("/{package_id}/book", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{package_id}/book",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.SALES))],
+)
 async def create_booking_from_package(
     package_id: UUID,
     body: BookFromPackageIn,
     request: Request,
+    current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
 ):
     """
