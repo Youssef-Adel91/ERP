@@ -98,5 +98,17 @@ class Payslip(TenantBase, table=True):
     allowances: Decimal = Field(default=Decimal("0.0"), sa_column=Column(Numeric(18, 4), nullable=False))
     deductions: Decimal = Field(default=Decimal("0.0"), sa_column=Column(Numeric(18, 4), nullable=False))
     net_pay: Decimal = Field(default=Decimal("0.0"), sa_column=Column(Numeric(18, 4), nullable=False))
-    
-    status: PayslipStatus = Field(default=PayslipStatus.DRAFT)
+
+    # See NOTE on Employee.status above (same class of bug: a bare
+    # sa.Enum(PayslipStatus) with no explicit schema="tenant" resolves the
+    # enum type against the connection's default search_path instead of
+    # this tenant's own schema, causing a 500 on GET/POST /hr/payslips).
+    # Fixed live, 2026-09-23 — see
+    # y5t0u1v2w3x4_create_payslipstatus_type_and_hr_payslips.py.
+    status: PayslipStatus = Field(
+        default=PayslipStatus.DRAFT,
+        sa_column=Column(
+            sa.Enum(PayslipStatus, name="payslipstatus", schema="tenant", create_type=False),
+            nullable=False,
+        ),
+    )

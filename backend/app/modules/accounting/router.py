@@ -21,10 +21,12 @@ from app.modules.accounting.schemas import (
     AccountBalanceResponse,
     AccountCreateRequest,
     AccountResponse,
+    AccountingPeriodResponse,
     JournalEntryCreateRequest,
     JournalEntryResponse,
     TrialBalanceRow,
 )
+from app.modules.accounting.services.journal import ClosedPeriodError
 from app.modules.system.dependencies import CurrentUser
 from app.modules.system.models import UserRole
 
@@ -36,6 +38,14 @@ router = APIRouter()
 # to roles that legitimately need it — previously any authenticated user of
 # any role (e.g. SALES, STAFF) could read/write the general ledger.
 _FINANCE_ROLES = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.ACCOUNTING))
+
+# P1 Item 4 (business-control decision, not made unilaterally — see
+# docs/P1_Item3_4_6_7_8_Final_Report.md section 5 and the follow-up prompt
+# that carried Youssef's decision): only OWNER may close or reopen an
+# accounting period. Not ADMIN, not ACCOUNTING — deliberately narrower than
+# _FINANCE_ROLES above, which read/write day-to-day ledger data but must not
+# be able to lock or unlock an entire period.
+_OWNER_ONLY = Depends(require_role(UserRole.OWNER))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -194,10 +204,15 @@ async def post_journal_entry(
     try:
         entry = await service.post_journal_entry(entry_id, current_user.id, db)
         return JournalEntryResponse.model_validate(entry)
-    except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ClosedPeriodError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "CLOSED_PERIOD", "message": str(exc)},
+        ) from exc
     except service.PostedEntryMutationError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.post(
@@ -225,6 +240,80 @@ async def create_reversing_entry(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+# ══════════════════════════════════════════════════════════════════
+# ACCOUNTING PERIODS (P1 Item 4)
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/periods",
+    response_model=list[AccountingPeriodResponse],
+    summary="List accounting periods",
+    tags=["Accounting - Periods"],
+    dependencies=[_FINANCE_ROLES],
+)
+async def list_periods(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+    limit: int = Query(default=500, le=1200),
+    offset: int = Query(default=0, ge=0),
+) -> list[AccountingPeriodResponse]:
+    periods = await service.list_periods(db, limit=limit, offset=offset)
+    return [AccountingPeriodResponse.model_validate(p) for p in periods]
+
+
+@router.post(
+    "/periods/{period_id}/close",
+    response_model=AccountingPeriodResponse,
+    summary="Close an accounting period (OWNER only)",
+    description=(
+        "Blocks any further journal-entry posting dated inside this period "
+        "(both the automated invoice.created path and manual DRAFT->POST). "
+        "Reversible — see POST ./{period_id}/reopen. Restricted to OWNER, "
+        "not ADMIN or ACCOUNTING (business-control decision, P1 Item 4)."
+    ),
+    tags=["Accounting - Periods"],
+    dependencies=[_OWNER_ONLY],
+)
+async def close_period(
+    period_id: UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+) -> AccountingPeriodResponse:
+    try:
+        period = await service.close_period(period_id, current_user.id, db)
+        return AccountingPeriodResponse.model_validate(period)
+    except service.PeriodNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except service.PeriodAlreadyClosedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/periods/{period_id}/reopen",
+    response_model=AccountingPeriodResponse,
+    summary="Reopen a CLOSED accounting period (OWNER only)",
+    description=(
+        "Allows posting into this period again. Not a routine action — "
+        "meant for a deliberate, approved correction (P1 Item 4 decision)."
+    ),
+    tags=["Accounting - Periods"],
+    dependencies=[_OWNER_ONLY],
+)
+async def reopen_period(
+    period_id: UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+) -> AccountingPeriodResponse:
+    try:
+        period = await service.reopen_period(period_id, db)
+        return AccountingPeriodResponse.model_validate(period)
+    except service.PeriodNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except service.PeriodAlreadyOpenError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -176,9 +176,27 @@ class Case(TenantBase, table=True):
         back_populates="case",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
+    # Bug fix (live-reproduced, 20 Sep 2026): the stage-history panel on the
+    # case detail page appeared to "never update" after a transition. The
+    # write path (services/engine.py::transition_case) always INSERTs a new
+    # CaseStageHistory row and the read path (lazy="selectin") always
+    # eagerly reloads the full set on every GET /cases/{id} — so the data
+    # itself was never stale. What was missing: no order_by on this
+    # relationship, so Postgres returned the rows in whatever physical/scan
+    # order it liked (not guaranteed to be insertion order), which made a
+    # freshly-added transition land in the *middle* of the rendered list
+    # instead of at the top/bottom where a user would actually look for it —
+    # indistinguishable, from the UI, from "it didn't update at all".
+    # Pinned to chronological order so the newest transition is always
+    # exactly where the frontend (which renders history top-to-bottom as-is,
+    # no client-side sort) expects it.
     history: list["CaseStageHistory"] = Relationship(
         back_populates="case",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+            "order_by": "CaseStageHistory.changed_at",
+        },
     )
 
 

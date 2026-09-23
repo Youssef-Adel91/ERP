@@ -92,6 +92,14 @@ class AccountingPeriod(TenantBase, table=True):
     end_date: datetime
     is_closed: bool = Field(default=False)
 
+    # P1 Item 4 (15 Sep 2026): who closed this period and when. Both are set
+    # together by close_period()/reopen_period() (app/modules/accounting/
+    # service.py) — closed_at is cleared back to None on reopen, closed_by is
+    # left as the last closer's id for audit history (not cleared), matching
+    # how JournalEntry.posted_at/created_by work elsewhere in this module.
+    closed_by: UUID | None = Field(default=None)
+    closed_at: datetime | None = Field(default=None)
+
     @property
     def status(self) -> PeriodStatus:
         """Return CLOSED if is_closed else OPEN."""

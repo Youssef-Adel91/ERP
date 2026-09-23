@@ -16,13 +16,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, InvoiceCreatedEvent, get_event_bus
+from app.core.events.invoice_payload import build_invoice_created_payload
 from app.modules.cases.models.core import Case, CaseType
 from app.plugins.rental.services.inspection import diff_inspections
 
 logger = logging.getLogger(__name__)
 event_bus = get_event_bus()
 
-_RETURN_STAGE = "returned"
+# Bug fix (live-reproduced, 20 Sep 2026, four_verticals_scenario_report.md
+# §3.4): revenue only ever posted when a case transitioned INTO "returned".
+# But services/engine.py::_validate_transition only enforces
+# "to_stage order >= from_stage order" — it does not require passing through
+# every intermediate stage — so a case can jump straight from "picked_up"
+# (order 2) to the terminal "closed" (order 4), skipping "returned" (order
+# 3) entirely. That closes the case (status=CLOSED, resource released) with
+# real accrued rental revenue and never fires this listener at all, so no
+# GL/journal entry is ever created for it — silent, and only discoverable by
+# reading the ledger afterwards, same shape as the hospitality/travel $0
+# traps already fixed elsewhere in this codebase.
+#
+# Fix: also run the same posting logic when the case reaches "closed"
+# directly. This is safe against double-posting for the normal
+# reserved -> picked_up -> returned -> closed path (where revenue already
+# posted at "returned"): the actual de-duplication guard is
+# gl_postings UNIQUE(source_type, source_id, entry_kind) inside
+# reserve_posting() (see app/modules/accounting/events.py::
+# handle_invoice_created), keyed on (case, case.id, "rental_return_revenue")
+# regardless of which stage transition triggered the publish — a second
+# call for an already-posted case is a no-op, not a duplicate entry.
+_REVENUE_TRIGGER_STAGES = {"returned", "closed"}
 
 
 async def _post_return_revenue(
@@ -31,8 +53,7 @@ async def _post_return_revenue(
     ct: CaseType,
     tenant_id: str,
 ) -> None:
-    if case.data.get("gl_revenue_posted"):
-        return
+    # Posting state lives in tenant.gl_postings only (P1 item 2) — no local flag.
 
     meta = ct.meta or {}
     
@@ -93,29 +114,26 @@ async def _post_return_revenue(
     await event_bus.publish(
         InvoiceCreatedEvent(
             tenant_id=tenant_id,
-            payload={
-                "source": "rental_plugin",
-                "source_id": str(case.id),
-                "invoice_id": str(case.id),
-                "invoice_number": f"RENT-{case.id.hex[:8].upper()}-RET",
-                "customer_name": customer_name,
-                "entry_type": "vehicle_rental_revenue",
-                "description": f"Vehicle Rental Return — {customer_name}",
-                "amount": float(grand_total),
-                "currency": case.data.get("currency", "EGP"),
-                "revenue_account_code": revenue_account,
-                "receivable_account_code": receivable_account,
-                "ar_account_code": receivable_account,
-                "entry_date": date.today().isoformat(),
-                "line_items": line_items,
-            },
+            payload=build_invoice_created_payload(
+                source="rental_plugin",
+                source_id=str(case.id),
+                entry_type="rental_return_revenue",
+                invoice_number=f"RENT-{case.id.hex[:8].upper()}-RET",
+                customer_name=customer_name,
+                amount=grand_total,
+                currency=case.data.get("currency", "EGP"),
+                revenue_account_code=revenue_account,
+                ar_account_code=receivable_account,
+                entry_date=date.today(),
+                description=f"Vehicle Rental Return — {customer_name}",
+                line_items=line_items,
+            ),
         ),
         session=session,
     )
 
     case.data = {
         **case.data,
-        "gl_revenue_posted": True,
         "total_rental_charge": float(base_charge),
         "extra_mileage_charge": float(extra_mileage_charge),
         "fuel_penalty": float(fuel_penalty),
@@ -165,7 +183,7 @@ async def handle_rental_stage_transitioned(event: DomainEvent, session: AsyncSes
         return
 
     to_stage = payload.get("to_stage")
-    if to_stage != _RETURN_STAGE:
+    if to_stage not in _REVENUE_TRIGGER_STAGES:
         return
 
     case_id_str = payload.get("case_id")

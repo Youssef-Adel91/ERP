@@ -183,11 +183,22 @@ export default function HRPage() {
                   {payslips.map((p) => {
                     const emp = employeesById.get(p.employee_id);
                     const net = Number(p.basic_wage) + Number(p.allowances) - Number(p.deductions);
+                    // Bug fix (live-reproduced, 20 Sep 2026): DRAFT payslips show
+                    // net salary as ٠ ج.م even though basic_wage/allowances/deductions
+                    // are filled in. Root cause: the backend only computes and stores
+                    // net_pay on approval (see approve_payslip in services/payroll.py)
+                    // — a DRAFT payslip's net_pay is still the Decimal default "0.0000",
+                    // serialized as a non-empty STRING, which is truthy in JS. So
+                    // `p.net_pay || net` always picked the string "0.0000" instead of
+                    // ever falling back to the live-computed `net`. Fix: only trust the
+                    // stored net_pay once the payslip is no longer DRAFT; otherwise
+                    // always show the live-computed value.
+                    const displayNet = p.status === "DRAFT" ? net : Number(p.net_pay);
                     return (
                       <tr key={p.id} className="hover:bg-surface-container-lowest transition-colors">
                         <td className="px-6 py-4 font-medium">{emp ? `${emp.first_name} ${emp.last_name}` : "—"}</td>
                         <td className="px-6 py-4 text-outline">{new Date(p.period_start).toLocaleDateString("ar-EG")} - {new Date(p.period_end).toLocaleDateString("ar-EG")}</td>
-                        <td className="px-6 py-4 font-data-mono font-bold" dir="ltr">{egp(p.net_pay || net)}</td>
+                        <td className="px-6 py-4 font-data-mono font-bold" dir="ltr">{egp(displayNet)}</td>
                         <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-[11px] font-bold ${paySlipTone[p.status]}`}>{paySlipLabel[p.status]}</span></td>
                         <td className="px-6 py-4">
                           {p.status === "DRAFT" && (

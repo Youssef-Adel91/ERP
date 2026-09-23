@@ -12,6 +12,7 @@ from app.modules.accounting.models.core import (
     JournalEntryStatus,
     PeriodStatus,
 )
+from app.modules.accounting.models.posting import GLPosting, GLPostingStatus
 
 # Backwards compatibility alias for V1 code/tests
 TransactionLine = JournalEntryLine
@@ -26,5 +27,7 @@ __all__ = [
     "JournalEntryLine",
     "TransactionLine",
     "DEFAULT_ACCOUNTS",
+    "GLPosting",
+    "GLPostingStatus",
 ]
 

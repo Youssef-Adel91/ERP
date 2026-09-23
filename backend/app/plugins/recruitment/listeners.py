@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, get_event_bus
+from app.core.events.invoice_payload import build_invoice_created_payload
 from app.modules.cases.models.core import Case, CaseType
 
 logger = logging.getLogger(__name__)
@@ -58,23 +59,21 @@ async def _post_commission_to_gl(
         amount = (salary * rate).quantize(Decimal("0.01"))
         description = f"Agency commission — {case.title or str(case.id)}"
         revenue_account = meta.get("commission_gl_account", "4010")
-        flag_field = "commission_posted"
         amount_field = "commission_amount"
     else:
         # deployed — flat deployment/processing fee (stored in meta or case.data)
         amount = Decimal(str(case.data.get("deployment_fee", meta.get("deployment_fee_default", "500")) or "500"))
         description = f"Deployment processing fee — {case.title or str(case.id)}"
         revenue_account = meta.get("deployment_fee_gl_account", "4010")
-        flag_field = "deployment_fee_posted"
         amount_field = "deployment_fee_amount"
 
     if amount <= 0:
         logger.info("Zero commission/fee for case %s — skipping GL post", case.id)
         return
 
-    if case.data.get(flag_field):
-        logger.info("GL posting already made for case %s stage %s — idempotent skip", case.id, stage)
-        return
+    # No flag check: handle_invoice_created reserves gl_postings
+    # (source_type, source_id, entry_kind) before writing anything, so a repeat
+    # publish is a no-op at the only layer that can actually guarantee it.
 
     # Publish InvoiceCreatedEvent — the accounting module's handler creates
     # the JournalEntry (DR Accounts Receivable / CR Revenue Account)
@@ -108,28 +107,34 @@ async def _post_commission_to_gl(
     await event_bus.publish(
         InvoiceCreatedEvent(
             tenant_id=tenant_id,
-            payload={
-                "source": "recruitment_plugin",
-                "source_id": str(case.id),
-                "invoice_id": str(case.id),
-                "invoice_number": invoice_number,
-                "customer_name": customer_name,
-                "description": description,
-                "amount": float(amount),
-                "revenue_account_code": revenue_account,
-                "receivable_account_code": "1200",
-                "ar_account_code": "1200",
-                "entry_date": date.today().isoformat(),
-                "case_stage": stage,
-            },
+            payload=build_invoice_created_payload(
+                source="recruitment_plugin",
+                source_id=str(case.id),
+                # Distinct kind per stage: a candidate legitimately produces BOTH
+                # a commission (contracted) and a deployment fee (deployed), and
+                # gl_postings must treat them as two separate postings.
+                entry_type=(
+                    "recruitment_commission"
+                    if stage == _COMMISSION_TRIGGER_STAGE
+                    else "recruitment_deployment_fee"
+                ),
+                invoice_number=invoice_number,
+                customer_name=customer_name,
+                amount=amount,
+                revenue_account_code=revenue_account,
+                ar_account_code="1200",
+                entry_date=date.today(),
+                description=description,
+                case_stage=stage,
+            ),
         ),
         session=session,
     )
 
-    # Mark as posted in case.data (persisted by caller's commit)
+    # Keep the computed amount (business figure). The posting flag is gone:
+    # tenant.gl_postings is the only record of whether the GL received this.
     case.data = {
         **updated_data,
-        flag_field: True,
         amount_field: float(amount),
     }
     session.add(case)

@@ -48,9 +48,14 @@ class VehicleInspection(TenantBase, table=True):
 
     case_id: uuid.UUID = Field(index=True)
 
+    # schema="tenant" is REQUIRED — see the matching note in
+    # app/plugins/hospitality/models/folio.py: it is the placeholder token that
+    # schema_translate_map and alembic/tenant/env.py rewrite to the real tenant
+    # schema. Without it the CREATE TYPE is emitted unqualified and lands in
+    # public, shared across tenants.
     inspection_type: InspectionType = Field(
         sa_column=Column(
-            sa.Enum(InspectionType, name="vehicle_inspection_type"),
+            sa.Enum(InspectionType, name="vehicle_inspection_type", schema="tenant"),
             nullable=False,
         )
     )
@@ -60,7 +65,7 @@ class VehicleInspection(TenantBase, table=True):
     )
     fuel_level: FuelLevel = Field(
         sa_column=Column(
-            sa.Enum(FuelLevel, name="vehicle_fuel_level"),
+            sa.Enum(FuelLevel, name="vehicle_fuel_level", schema="tenant"),
             nullable=False,
         )
     )

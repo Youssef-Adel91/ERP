@@ -372,6 +372,7 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         DEFAULT_ACCOUNTS,
         Account,
         AccountingPeriod,
+        GLPosting,
         JournalEntry,
         TransactionLine,
     )
@@ -415,7 +416,7 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     from app.plugins.travel.models.document import VisaDocument
     from app.modules.finance.models.cheques import Cheque
     from app.modules.news.models import Announcement
-    from app.modules.imports.models.core import ImportDossier, ImportExpense
+    from app.modules.imports.models.core import ImportDossier, ImportExpense, DossierCostLayer
     from app.modules.approvals.models.core import ApprovalRule, ApprovalRequest, ApprovalDecision
     from app.modules.eta.models.core import EtaTenantConfig, EtaDocument, EtaSubmission
     from app.modules.eta.models.codes import EgsCode
@@ -470,6 +471,11 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         # enough to make 100% of automated GL postings impossible tenant-wide,
         # independent of the account_id/invoice_number bugs found the same day.
         AccountingPeriod.__table__,
+        # GL posting guard — UNIQUE (source_type, source_id, entry_kind) is what
+        # makes double-posting impossible. Listed here so a NEW tenant gets it
+        # from create_all(), not just from `alembic upgrade head` (the exact gap
+        # that left folio_items missing from every tenant in P0).
+        GLPosting.__table__,
         Contact.__table__,
         CarrierAccount.__table__,
         Shipment.__table__,
@@ -569,6 +575,7 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         # Imports — depends on contacts (supplier_id has no FK constraint)
         ImportDossier.__table__,
         ImportExpense.__table__,
+        DossierCostLayer.__table__,
         # Approval Engine — no FK dependencies on the above (document_id is an
         # unconstrained UUID; requests can reference documents in any module)
         ApprovalRule.__table__,
@@ -880,6 +887,20 @@ _BYPASS_PATHS = {
     "/api/v1/system/auth/login",
     "/api/v1/system/auth/refresh",
     "/api/v1/system/tenants/register",
+    # P1-Extra (found live 15 Sep 2026, tenant_e1ee4d0e_...): these two were
+    # missing from this set, so TenantMiddleware 401'd every call before it
+    # ever reached app.modules.system.router — even though that router's own
+    # docstrings and OpenAPI descriptions explicitly document both as public,
+    # no-Bearer-required endpoints. Net effect: NO logged-out user could ever
+    # recover a forgotten password — /forgot-password always returned 401
+    # "Authentication required. Provide a Bearer token." before the handler's
+    # own (real, Redis-backed, single-use, TTL-limited — see
+    # app.core.security.security.create_password_reset_token /
+    # validate_password_reset_token) protection ever ran. Same bare-root/
+    # bypass-list-omission bug class as the WhatsApp/Paymob/ETA/carrier
+    # webhooks above, just on an auth endpoint instead of a webhook.
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
 }
 _BYPASS_PREFIXES = (
     "/api/v1/portal/",          # Client Portal endpoints (self-managed auth)

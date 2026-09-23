@@ -26,9 +26,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from decimal import Decimal
+
 from app.modules.inventory.models.core import (
     CostingMethod,
     Item,
+    ItemVariant,
     Warehouse,
     WarehouseType,
 )
@@ -47,11 +50,33 @@ class ItemCreateRequest(BaseModel):
     costing_method: CostingMethod = CostingMethod.FIFO
     requires_batch: bool = False
     requires_serial: bool = False
+    # Bug fix (live-reproduced, 20 Sep 2026): the "new item" form had no
+    # price field at all, because price lives on ItemVariant, not Item, and
+    # nothing ever created a default variant. That silently made every new
+    # item unsellable: POS's /pos/catalog does an INNER JOIN against
+    # ItemVariant and (by design, see its docstring) omits any item with no
+    # variant, so items created here never appeared in the POS product
+    # search, with no explanation shown to the user. Accepting an optional
+    # price here and creating a matching default ItemVariant (same sku/name
+    # as the item) closes that gap for the common single-variant case,
+    # without touching the multi-variant path for items that need one.
+    price: Decimal | None = None
+
+
+class ItemResponse(BaseModel):
+    id: UUID
+    sku: str
+    name: str
+    egs_code: str | None
+    costing_method: CostingMethod
+    requires_batch: bool
+    requires_serial: bool
+    price: Decimal | None = None
 
 
 @router.post(
     "/items",
-    response_model=Item,
+    response_model=ItemResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new item (product/SKU)",
 )
@@ -59,7 +84,7 @@ async def create_item(
     data: ItemCreateRequest,
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_tenant_db),
-) -> Item:
+) -> ItemResponse:
     existing = await db.execute(select(Item).where(Item.sku == data.sku))
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -68,11 +93,23 @@ async def create_item(
         )
 
     try:
-        item = Item(**data.model_dump())
+        item_fields = data.model_dump(exclude={"price"})
+        item = Item(**item_fields)
         db.add(item)
+        await db.flush()
+
+        if data.price is not None:
+            variant = ItemVariant(
+                item_id=item.id,
+                name=item.name,
+                sku=item.sku,
+                price=data.price,
+            )
+            db.add(variant)
+
         await db.commit()
         await db.refresh(item)
-        return item
+        return ItemResponse(**item.model_dump(), price=data.price)
     except Exception as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

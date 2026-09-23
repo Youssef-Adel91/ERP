@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.sequences.service import allocate_sequence
 from app.modules.accounting.models import (
     Account,
+    AccountingPeriod,
     AccountType,
     JournalEntry,
     JournalEntryLine,
@@ -56,6 +57,18 @@ class PostedEntryMutationError(PermissionError):
 
 class AccountNotFoundError(LookupError):
     """Referenced account code does not exist in this tenant's Chart of Accounts."""
+
+
+class PeriodNotFoundError(LookupError):
+    """Referenced accounting period does not exist."""
+
+
+class PeriodAlreadyClosedError(ValueError):
+    """Attempt to close a period that is already CLOSED."""
+
+
+class PeriodAlreadyOpenError(ValueError):
+    """Attempt to reopen a period that is already OPEN."""
 
 
 # ── Accounts ──────────────────────────────────────────────────────────────────
@@ -259,6 +272,35 @@ async def post_journal_entry(
             f"Journal entry '{entry_id}' is VOID and cannot be posted.",
         )
 
+    # P1 Item 4 — incidental gap found while wiring period enforcement:
+    # create_journal_entry() (services/journal.py) already hard-blocks a
+    # CLOSED/undefined period for the automated invoice.created path, but
+    # this manual DRAFT -> POSTED path (POST /journal-entries/{id}/post)
+    # built its own JournalEntry directly in create_draft_journal_entry()
+    # and never checked the period at all — a manual entry could be posted
+    # straight into a period an OWNER just closed. Same check, same error
+    # type, so the router's existing exception handling (added below) covers
+    # both paths identically.
+    from datetime import time as _time
+    entry_start_dt = datetime.combine(entry.entry_date, _time.min)
+    entry_end_dt = datetime.combine(entry.entry_date, _time.max)
+    period_res = await db.execute(
+        select(AccountingPeriod).where(
+            AccountingPeriod.start_date <= entry_end_dt,
+            AccountingPeriod.end_date >= entry_start_dt,
+        )
+    )
+    period = period_res.scalars().first()
+    if period is None:
+        raise ClosedPeriodError(
+            f"No accounting period defined for entry date '{entry.entry_date}'. Cannot post journal entry."
+        )
+    if period.is_closed:
+        raise ClosedPeriodError(
+            f"Accounting period '{period.name}' ({period.start_date.date()} to "
+            f"{period.end_date.date()}) is CLOSED. Cannot post journal entry."
+        )
+
     entry.status = JournalEntryStatus.POSTED
     entry.posted_at = datetime.now(UTC).replace(tzinfo=None)
 
@@ -276,7 +318,26 @@ async def post_journal_entry(
 
     # 2. Compute hash chain (SELECT FOR UPDATE on chain tip, also inside this tx)
     from app.modules.accounting.services.hash import compute_entry_hash
-    lines = list(entry.lines)  # already loaded via selectin
+
+    # P1 Item 4 — second incidental discovery (self-reported, not part of
+    # the period-enforcement work): `list(entry.lines)` assumed the
+    # lazy="selectin" relationship was already eager-loaded, but if `entry`
+    # came back from the session identity map with its relationship state
+    # expired (e.g. after any db.rollback() in the same session — rollback
+    # always expires every loaded object, regardless of expire_on_commit),
+    # that assumption breaks: accessing `.lines` then triggers an implicit
+    # lazy-load, and plain synchronous lazy-loading is not supported on an
+    # AsyncSession — it raises MissingGreenlet. Found live while re-testing
+    # Item 4's "reopen then post succeeds" step (posting the same draft a
+    # second time in one session, after the first attempt was rolled back).
+    # Fixed with an explicit awaited query instead of relying on implicit
+    # eager-load state — the same pattern already used safely in
+    # verify_hash_chain() in services/hash.py (fetches TransactionLine
+    # rows explicitly rather than touching a relationship attribute).
+    lines_result = await db.execute(
+        select(TransactionLine).where(TransactionLine.journal_entry_id == entry.id)
+    )
+    lines = list(lines_result.scalars().all())
     prev_hash, entry_hash = await compute_entry_hash(db, entry, lines)
     entry.prev_hash = prev_hash
     entry.entry_hash = entry_hash
@@ -285,6 +346,66 @@ async def post_journal_entry(
     await db.refresh(entry)
     logger.info("Posted journal entry '%s' (id=%s) seq#%d", entry.reference, entry.id, seq_no)
     return entry
+
+
+async def list_periods(
+    db: AsyncSession,
+    limit: int = 500,
+    offset: int = 0,
+) -> list[AccountingPeriod]:
+    """List accounting periods, most recent start_date first."""
+    result = await db.execute(
+        select(AccountingPeriod)
+        .order_by(AccountingPeriod.start_date.desc())
+        .limit(limit)
+        .offset(offset),
+    )
+    return list(result.scalars().all())
+
+
+async def close_period(period_id: UUID, closed_by: UUID, db: AsyncSession) -> AccountingPeriod:
+    """
+    Close an accounting period — P1 Item 4 decision: OWNER-only (enforced at
+    the router layer via require_role), every period starts OPEN, no
+    scheduled auto-close. Closing is a deliberate act, and — per the same
+    decision — reversible via reopen_period() below, not a one-way lock.
+    """
+    period = await db.get(AccountingPeriod, period_id)
+    if not period:
+        raise PeriodNotFoundError(f"Accounting period '{period_id}' not found.")
+    if period.is_closed:
+        raise PeriodAlreadyClosedError(f"Accounting period '{period.name}' is already CLOSED.")
+
+    period.is_closed = True
+    period.closed_by = closed_by
+    period.closed_at = datetime.now(UTC).replace(tzinfo=None)
+    db.add(period)
+    await db.commit()
+    await db.refresh(period)
+    logger.info("Accounting period '%s' (id=%s) CLOSED by user %s", period.name, period.id, closed_by)
+    return period
+
+
+async def reopen_period(period_id: UUID, db: AsyncSession) -> AccountingPeriod:
+    """
+    Reopen a CLOSED accounting period — P1 Item 4 decision: this is an
+    explicit, OWNER-only exception path for a genuine correction, not a
+    routine action. closed_by is intentionally left as-is (audit trail of
+    who last closed it); only closed_at is cleared.
+    """
+    period = await db.get(AccountingPeriod, period_id)
+    if not period:
+        raise PeriodNotFoundError(f"Accounting period '{period_id}' not found.")
+    if not period.is_closed:
+        raise PeriodAlreadyOpenError(f"Accounting period '{period.name}' is already OPEN.")
+
+    period.is_closed = False
+    period.closed_at = None
+    db.add(period)
+    await db.commit()
+    await db.refresh(period)
+    logger.info("Accounting period '%s' (id=%s) REOPENED", period.name, period.id)
+    return period
 
 
 async def create_reversing_entry(

@@ -142,7 +142,7 @@ async def create_journal_entry(
                 raise LookupError(f"Account with id '{account_id}' not found.")
             pl["account_code"] = acct.code
             if not pl["account_name"]:
-                pl["account_name"] = acct.name
+                pl["account_name"] = acct.name_ar or acct.name
         elif account_code and not account_id:
             acct_res = await session.execute(select(Account).where(Account.code == account_code))
             acct = acct_res.scalar_one_or_none()
@@ -150,7 +150,15 @@ async def create_journal_entry(
                 raise LookupError(f"Account with code '{account_code}' not found.")
             pl["account_id"] = acct.id
             if not pl["account_name"]:
-                pl["account_name"] = acct.name
+                # Bug fix (live-reproduced, 20 Sep 2026): this snapshotted
+                # Account.name (always English) onto the journal line, so
+                # journal entries and the trial balance (which reads this
+                # snapshot / Account.name directly) showed raw English
+                # account names even for tenants whose Chart of Accounts
+                # tab displays the Arabic name_ar for the same accounts.
+                # Prefer name_ar, falling back to name only when no Arabic
+                # name is set.
+                pl["account_name"] = acct.name_ar or acct.name
         elif not account_id and not account_code:
             raise ValueError("Each journal line must specify either 'account_id' or 'account_code'.")
 

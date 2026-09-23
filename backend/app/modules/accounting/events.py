@@ -30,6 +30,15 @@ from uuid import UUID
 
 from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, get_event_bus
+from app.core.events.invoice_payload import (
+    InvoicePayloadContractError,
+    assert_invoice_payload_contract,
+)
+from app.modules.accounting.services.gl_posting import (
+    mark_failed,
+    mark_posted,
+    reserve_posting,
+)
 from app.modules.accounting.models import JournalEntryStatus
 from app.modules.accounting.services.journal import create_journal_entry
 
@@ -80,7 +89,25 @@ async def handle_invoice_created(event: DomainEvent) -> None:
     )
 
     # ── Parse payload ─────────────────────────────────────────────────────────
+    #
+    # CONTRACT ENFORCEMENT (added 15 Sep 2026 after a live P0): this used to
+    # answer a missing key with a single logger.error line + `return`. That made
+    # the Travel plugin's missing "invoice_number" completely invisible — the
+    # booking confirmed with HTTP 200 and stamped gl_receivable_posted=True on
+    # the Case, while the ledger stayed empty. A silent drop is the worst
+    # possible failure mode for an accounting bridge, so a violated contract now
+    # RAISES InvoicePayloadContractError.
+    #
+    # Raising is safe: app/core/events/event_bus.py deliberately catches every
+    # handler exception so one broken subscriber can't abort an unrelated
+    # publisher's transaction — but it logs it via logger.exception(), i.e. a
+    # full traceback naming the exception class. Loud and greppable instead of
+    # one easily-missed line. Publishers should use
+    # app.core.events.invoice_payload.build_invoice_created_payload(), which
+    # cannot construct a payload that violates this contract.
     payload = event.payload
+    assert_invoice_payload_contract(payload, context=f"event_id={event_id_str}")
+
     try:
         invoice_number = _require_payload(payload, "invoice_number", event_id_str)
         amount_str = _require_payload(payload, "amount", event_id_str)
@@ -99,7 +126,7 @@ async def handle_invoice_created(event: DomainEvent) -> None:
             event_id_str,
             exc,
         )
-        return
+        raise
 
     # ── Application-level double-entry validation (before any DB call) ────────
     total_debit = amount
@@ -133,27 +160,79 @@ async def handle_invoice_created(event: DomainEvent) -> None:
     # for sales/inventory events. It resolves account_code → account_id via
     # a real Account lookup, asserts SUM(debits) == SUM(credits), validates
     # an open AccountingPeriod exists for entry_date, and commits atomically.
+    # ── Idempotency gate (P1 item 1+2) ───────────────────────────────────────
+    # `source` / `source_id` / `entry_type` identify the business event. The
+    # gl_postings UNIQUE (source_type, source_id, entry_kind) is what actually
+    # stops a double post — the Case row's FOR UPDATE lock only ever protected
+    # the transition path, and the ledger itself accepts duplicates (proven live
+    # with two identical "DUP-TEST-001" entries, both 201).
+    #
+    # A source that does not identify itself cannot be de-duplicated. Rather
+    # than silently allowing an unguarded post, that is refused loudly — the
+    # payload builder (app/core/events/invoice_payload.py) always supplies both.
+    posting_source_type = payload.get("source_type") or "case"
+    posting_source_id = payload.get("source_id")
+    entry_kind = payload.get("entry_type") or payload.get("entry_kind")
+    if not posting_source_id or not entry_kind:
+        raise InvoicePayloadContractError(
+            f"[event_id={event_id_str}] invoice.created cannot be de-duplicated: "
+            f"source_id={posting_source_id!r} entry_type={entry_kind!r}. Both are "
+            f"required so gl_postings can guarantee exactly-once posting."
+        )
+
+    reserved_posting_id: UUID | None = None
     try:
         entry_date_str = payload.get("entry_date")
         from datetime import date as _date
         entry_date = _date.fromisoformat(entry_date_str) if entry_date_str else _date.today()
 
         async with tenant_session(event.tenant_id) as session:
+            # Claim FIRST, inside the same transaction as the journal entry, so
+            # a crash between the two rolls back both rather than leaving an
+            # orphan entry. A conflict means someone already posted this exact
+            # (source, kind): that is an idempotent success, not an error.
+            posting = await reserve_posting(
+                session,
+                source_type=posting_source_type,
+                source_id=posting_source_id,
+                entry_kind=entry_kind,
+                invoice_number=invoice_number,
+                amount=amount,
+                currency=payload.get("currency", "EGP"),
+            )
+            if posting is None:
+                logger.info(
+                    "↩️ invoice.created skipped (event_id=%s): %s/%s/%s is already "
+                    "posted — idempotent no-op, ledger unchanged.",
+                    event_id_str, posting_source_type, posting_source_id, entry_kind,
+                )
+                return
+            reserved_posting_id = posting.id
+
             entry = await create_journal_entry(
                 session=session,
                 description=f"Sales invoice for {customer} — {invoice_number}",
                 entry_date=entry_date,
+                # account_name is deliberately left unset: create_journal_entry()
+                # resolves account_code -> the real Account row and fills in its
+                # actual name when this is falsy. Hardcoding "Accounts
+                # Receivable"/"Sales Revenue" mislabelled every line that isn't
+                # literally 1200/4010 — live-confirmed on the travel supplier
+                # entry, which rendered as
+                #   "5010 Accounts Receivable" / "2100 Sales Revenue"
+                # (correct codes, nonsense names) and on rental's 4020, shown as
+                # "Sales Revenue" instead of "Vehicle Rental Revenue". The codes
+                # drive the accounting; the names are what a human reads in the
+                # ledger, so they must not lie.
                 lines_data=[
                     {
                         "account_code": ar_code,
-                        "account_name": "Accounts Receivable",
                         "debit": amount,
                         "credit": Decimal("0.0000"),
                         "description": f"Receivable: {customer} / {invoice_number}",
                     },
                     {
                         "account_code": rev_code,
-                        "account_name": "Sales Revenue",
                         "debit": Decimal("0.0000"),
                         "credit": amount,
                         "description": f"Revenue recognized: {invoice_number}",
@@ -164,6 +243,18 @@ async def handle_invoice_created(event: DomainEvent) -> None:
                 source_type="invoice",
                 source_id=UUID(source_id_str) if source_id_str else None,
                 status=JournalEntryStatus.POSTED,
+            )
+
+        # create_journal_entry() commits its own transaction, so confirming the
+        # reservation is a second, short transaction. A crash in the gap leaves
+        # the row at RESERVED with a real journal entry behind it — visible and
+        # repairable, and critically it still blocks a duplicate post, which is
+        # the property that matters.
+        async with tenant_session(event.tenant_id) as confirm_session:
+            await mark_posted(
+                confirm_session,
+                posting_id=reserved_posting_id,
+                journal_entry_id=entry.id,
             )
 
         logger.info(
@@ -178,12 +269,23 @@ async def handle_invoice_created(event: DomainEvent) -> None:
             rev_code,
         )
 
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "❌ DB error while processing invoice.created (event_id=%s, tenant=%s)",
             event_id_str,
             event.tenant_id,
         )
+        # Record WHY on the posting record itself, on a fresh session (the one
+        # above is poisoned by the failed transaction). This is what makes the
+        # failure visible to the user instead of living only in the log.
+        if reserved_posting_id is not None:
+            try:
+                async with tenant_session(event.tenant_id) as fail_session:
+                    await mark_failed(fail_session, posting_id=reserved_posting_id, exc=exc)
+            except Exception:
+                logger.exception(
+                    "Could not record FAILED state for gl_posting %s", reserved_posting_id
+                )
         raise  # Re-raise so _safe_handler_call logs the full traceback
 
 

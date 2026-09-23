@@ -22,7 +22,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.accounting.models import JournalEntry, TransactionLine
+from app.modules.accounting.models import JournalEntry, JournalEntryStatus, TransactionLine
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,21 @@ async def compute_entry_hash(
     """
     # Fetch the most recently posted entry by sequence_no to get the chain tip.
     # FOR UPDATE serializes concurrent postings so two entries cannot share a prev_hash.
+    # P1 Item 4 — incidental discovery (self-reported, not part of the
+    # period-enforcement work): this compared JournalEntry.status to the
+    # LOWERCASE literal "posted", but JournalEntryStatus.POSTED is
+    # "POSTED" (uppercase) and `status` is a native Postgres enum column,
+    # so Postgres rejects the literal at bind time on every single call —
+    # this made the manual POST /journal-entries/{id}/post endpoint fail
+    # unconditionally, for any tenant, regardless of whether a prior
+    # POSTED entry exists. Found live while verifying Item 4's closed-
+    # period rejection (the very first live exercise of this code path
+    # this session). Fixed by comparing to the enum member instead of a
+    # hand-typed string.
     stmt = (
         select(JournalEntry)
         .where(
-            JournalEntry.status == "posted",
+            JournalEntry.status == JournalEntryStatus.POSTED,
             JournalEntry.entry_hash.is_not(None),
             JournalEntry.id != entry.id,
         )
@@ -121,10 +132,12 @@ async def verify_hash_chain(session: AsyncSession) -> tuple[bool, int | None]:
         If valid: (True, None)
         If broken: (False, sequence_no of first tampered entry)
     """
+    # Same incidental fix as compute_entry_hash() above — enum member, not
+    # a hand-typed lowercase string.
     stmt = (
         select(JournalEntry)
         .where(
-            JournalEntry.status == "posted",
+            JournalEntry.status == JournalEntryStatus.POSTED,
             JournalEntry.entry_hash.is_not(None),
         )
         .order_by(JournalEntry.sequence_no.asc())

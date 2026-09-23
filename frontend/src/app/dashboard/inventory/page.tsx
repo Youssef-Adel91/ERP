@@ -171,10 +171,19 @@ function ItemsTab({ modalOpen, onCloseModal }: { modalOpen: boolean; onCloseModa
   );
 }
 
+// Bug fix (live-reproduced, 20 Sep 2026): this form had no price field at
+// all. Price lives on ItemVariant, not Item, and nothing ever created a
+// default variant — so every item created here was silently unsellable:
+// POS's /pos/catalog inner-joins Item to ItemVariant and omits any item
+// with no variant (by design), with no message explaining why to the
+// merchant. `price` is now optional here and sent to the (also fixed)
+// POST /inventory/items, which creates a matching default variant when a
+// price is given.
 const createItemSchema = z.object({
   name: z.string().min(1, "الاسم مطلوب"),
   sku: z.string().min(1, "SKU مطلوب"),
   egs_code: z.string().optional(),
+  price: z.string().optional(),
   costing_method: z.enum(["FIFO", "WAC", "LIFO", "STANDARD"]),
   requires_batch: z.boolean(),
   requires_serial: z.boolean(),
@@ -185,12 +194,16 @@ function CreateItemModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [errorMsg, setErrorMsg] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<CreateItemForm>({
     resolver: zodResolver(createItemSchema),
-    defaultValues: { name: "", sku: "", egs_code: "", costing_method: "FIFO", requires_batch: false, requires_serial: false },
+    defaultValues: { name: "", sku: "", egs_code: "", price: "", costing_method: "FIFO", requires_batch: false, requires_serial: false },
   });
 
   const mutation = useMutation({
     mutationFn: async (data: CreateItemForm) => {
-      await apiClient.post("/inventory/items", { ...data, egs_code: data.egs_code || undefined });
+      await apiClient.post("/inventory/items", {
+        ...data,
+        egs_code: data.egs_code || undefined,
+        price: data.price ? Number(data.price) : undefined,
+      });
     },
     onSuccess: onCreated,
     onError: (err: AxiosError<{ detail?: string }>) => {
@@ -222,6 +235,12 @@ function CreateItemModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <input {...register("egs_code")} dir="ltr" className="input-field font-mono" />
             </Field>
           </div>
+          <Field label="سعر البيع (اختياري)" error={errors.price?.message}>
+            <input {...register("price")} type="number" step="0.01" min="0" dir="ltr" className="input-field font-mono" placeholder="0.00" />
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              الصنف من غير سعر بيع لن يظهر في نقطة البيع (POS).
+            </p>
+          </Field>
           <Field label="طريقة حساب التكلفة">
             <select {...register("costing_method")} className="input-field">
               <option value="FIFO">FIFO</option>

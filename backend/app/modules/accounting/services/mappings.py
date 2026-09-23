@@ -39,80 +39,112 @@ class AccountMappingKey(str, Enum):
     RETURN_FEE_EXPENSE = "RETURN_FEE_EXPENSE"
 
 
+# Bug fix (live-reproduced, 20 Sep 2026): these codes used to be disjoint
+# from the tenant's actual seeded Chart of Accounts (see DEFAULT_ACCOUNTS in
+# app/modules/accounting/models/core.py). SALES_REVENUE pointed at code
+# "4000" while the seed's Sales Revenue account is "4010", and
+# ACCOUNTS_PAYABLE pointed at "2000" while the seed's Accounts Payable
+# account is "2100". Because get_default_account() below looks accounts up
+# by code and silently scaffolds a brand-new account when the code isn't
+# found, every posted sales invoice or vendor bill created a *second*,
+# English-only, duplicate account ("4000 - Sales Revenue" next to the
+# already-seeded "4010 - إيرادات المبيعات", and "2000 - Accounts Payable"
+# next to "2100 - الموردون") instead of posting into the tenant's real
+# chart of accounts — fragmenting every financial report across two ledger
+# accounts for the same concept. Fixed by aligning these two codes with the
+# seed, and by adding name_ar to every entry (used by get_default_account
+# below) so any account this service *does* legitimately need to scaffold
+# (e.g. Sales Tax Payable, GRNI Accrual — which have no seed equivalent)
+# still gets a proper Arabic name instead of English-only.
 DEFAULT_ACCOUNT_CONFIGS: dict[AccountMappingKey, dict[str, Any]] = {
     AccountMappingKey.ACCOUNTS_RECEIVABLE: {
         "code": "1200",
         "name": "Accounts Receivable",
+        "name_ar": "العملاء (حسابات مدينة)",
         "account_type": AccountType.ASSET,
     },
     AccountMappingKey.SALES_REVENUE: {
-        "code": "4000",
+        "code": "4010",
         "name": "Sales Revenue",
+        "name_ar": "إيرادات المبيعات",
         "account_type": AccountType.REVENUE,
     },
     AccountMappingKey.SALES_TAX_PAYABLE: {
         "code": "2200",
         "name": "Sales Tax Payable",
+        "name_ar": "ضريبة المبيعات المستحقة",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.INVENTORY_ASSET: {
         "code": "1300",
         "name": "Inventory Asset",
+        "name_ar": "المخزون",
         "account_type": AccountType.ASSET,
     },
     AccountMappingKey.STOCK_VARIANCE_EXPENSE: {
         "code": "5050",
         "name": "Stock Variance Expense",
+        "name_ar": "فروقات المخزون",
         "account_type": AccountType.EXPENSE,
     },
     AccountMappingKey.GRNI_ACCRUAL: {
         "code": "2110",
         "name": "GRNI Accrual",
+        "name_ar": "مستحقات بضاعة مستلمة غير مفوترة",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.ACCOUNTS_PAYABLE: {
-        "code": "2000",
+        "code": "2100",
         "name": "Accounts Payable",
+        "name_ar": "الموردون (حسابات دائنة)",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.INPUT_VAT_RECEIVABLE: {
         "code": "1400",
         "name": "Input VAT Receivable",
+        "name_ar": "ضريبة القيمة المضافة القابلة للخصم",
         "account_type": AccountType.ASSET,
     },
     AccountMappingKey.LANDED_COST_CLEARING: {
         "code": "2120",
         "name": "Landed Cost Clearing",
+        "name_ar": "مصاريف الشحن والاستيراد المعلقة",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.CASH_AND_BANKS: {
         "code": "1100",
         "name": "Cash and Banks",
+        "name_ar": "النقدية وما يعادلها",
         "account_type": AccountType.ASSET,
     },
     AccountMappingKey.CASH_WITH_CARRIER: {
         "code": "1150",
         "name": "Cash with Carrier",
+        "name_ar": "نقدية لدى شركة الشحن",
         "account_type": AccountType.ASSET,
     },
     AccountMappingKey.FX_VARIANCE_EXPENSE: {
         "code": "5100",
         "name": "FX Variance Expense",
+        "name_ar": "فروقات أسعار الصرف",
         "account_type": AccountType.EXPENSE,
     },
     AccountMappingKey.SHIPPING_EXPENSE: {
         "code": "5200",
         "name": "Shipping Expense",
+        "name_ar": "مصاريف الشحن",
         "account_type": AccountType.EXPENSE,
     },
     AccountMappingKey.COD_FEE_EXPENSE: {
         "code": "5210",
         "name": "COD Fee Expense",
+        "name_ar": "مصاريف التحصيل عند الاستلام",
         "account_type": AccountType.EXPENSE,
     },
     AccountMappingKey.RETURN_FEE_EXPENSE: {
         "code": "5220",
         "name": "Return Fee Expense",
+        "name_ar": "مصاريف المرتجعات",
         "account_type": AccountType.EXPENSE,
     },
 }
@@ -155,12 +187,10 @@ async def get_default_account(
         account = Account(
             code=code,
             name=config["name"],
+            name_ar=config.get("name_ar"),
             account_type=config["account_type"],
             is_active=True,
-            is_header=False,
-            is_reconciliation=False,
             is_system=True,
-            currency="EGP",
         )
         session.add(account)
         await session.flush()

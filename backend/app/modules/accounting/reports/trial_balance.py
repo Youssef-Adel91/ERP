@@ -69,7 +69,12 @@ async def generate_trial_balance(
         select(
             Account.id.label("account_id"),
             Account.code.label("account_code"),
-            Account.name.label("account_name"),
+            # Bug fix (live-reproduced, 20 Sep 2026): was Account.name
+            # (always English), so the trial balance showed raw English
+            # account names ("Cash & Cash Equivalents") for the same
+            # accounts the Chart of Accounts tab shows in Arabic
+            # (name_ar, "النقدية وما يعادلها"). Prefer name_ar.
+            func.coalesce(Account.name_ar, Account.name).label("account_name"),
             Account.account_type.label("account_type"),
             func.coalesce(line_subq.c.sum_debit, Decimal("0")).label("total_debit"),
             func.coalesce(line_subq.c.sum_credit, Decimal("0")).label("total_credit"),
@@ -127,7 +132,7 @@ async def generate_trial_balance(
         {
             "account_id": None,
             "account_code": "TOTAL",
-            "account_name": "Grand Total",
+            "account_name": "الإجمالي الكلي",
             "account_type": "TOTAL",
             "total_debit": grand_total_debit,
             "total_credit": grand_total_credit,

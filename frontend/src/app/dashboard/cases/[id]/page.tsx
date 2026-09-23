@@ -120,7 +120,112 @@ interface TravelFinancials {
 // free-text Arabic fields like "full_name".
 const TECHNICAL_FIELD_RE = /number|price|amount|passport|code|ref|iban|phone|currency/i;
 const isTechnicalField = (key: string) => TECHNICAL_FIELD_RE.test(key);
-const labelize = (key: string) => key.replace(/_/g, " ");
+// Bug fix (live-reproduced, 20 Sep 2026, four_verticals_scenario_report.md
+// §3.5): this generic JSON-Schema-driven form renders every vertical
+// (hospitality, travel, rental, recruitment) from CaseType.stages[].schema,
+// but field labels came from `labelize()` (just "_" -> " " on the raw
+// English JSON Schema key) and enum <option> values were rendered as the
+// raw English enum member — both landing untranslated inside an otherwise
+// fully-Arabic UI (room type "double", rental's "pickup_actual" /
+// "driver_license_number" stage-transition fields, trip_type "package",
+// etc). Added Arabic overrides for every field key and enum value seen
+// across the four plugins' bootstrap.py schemas; anything not in these
+// maps still falls back to the previous behavior (spaced English key /
+// raw enum value) rather than showing nothing.
+const FIELD_LABEL_AR: Record<string, string> = {
+  // Shared / cross-vertical
+  customer_name: "اسم العميل",
+  customer_name_ar: "اسم العميل بالعربي",
+  notes: "ملاحظات",
+  currency: "العملة",
+  services: "الخدمات",
+  // Travel
+  destination: "الوجهة",
+  origin: "نقطة الانطلاق",
+  travel_date_requested: "تاريخ السفر المطلوب",
+  return_date_requested: "تاريخ العودة المطلوب",
+  travel_date_actual: "تاريخ السفر الفعلي",
+  return_date_actual: "تاريخ العودة الفعلي",
+  group_size: "عدد الأفراد",
+  trip_type: "نوع الرحلة",
+  confirmation_reference: "مرجع التأكيد",
+  payment_terms: "شروط الدفع",
+  ticket_numbers: "أرقام التذاكر",
+  ticket_issued_at: "تاريخ إصدار التذكرة",
+  feedback_score: "تقييم العميل",
+  cancellation_reason: "سبب الإلغاء",
+  refund_amount: "مبلغ الاسترداد",
+  penalty_amount: "قيمة الغرامة",
+  buy_price: "سعر الشراء",
+  sell_price: "سعر البيع",
+  margin: "الهامش",
+  margin_pct: "نسبة الهامش",
+  // Hospitality
+  guest_name: "اسم الضيف",
+  guest_phone: "رقم هاتف الضيف",
+  guest_count: "عدد الضيوف",
+  daily_rate: "السعر لليلة",
+  board_type: "نوع الإقامة",
+  checkin_actual: "تسجيل الدخول الفعلي",
+  checkout_actual: "تسجيل المغادرة الفعلي",
+  payment_method: "طريقة الدفع",
+  // Rental
+  renter_name: "اسم المستأجر",
+  renter_name_ar: "اسم المستأجر بالعربي",
+  renter_phone: "رقم هاتف المستأجر",
+  driver_license_number: "رقم رخصة القيادة",
+  driver_license_expiry: "تاريخ انتهاء رخصة القيادة",
+  mileage_limit_per_day: "حد الكيلومترات يوميًا",
+  extra_mileage_rate: "سعر الكيلومتر الإضافي",
+  insurance_type: "نوع التأمين",
+  deposit_amount: "قيمة التأمين المسترد",
+  pickup_location: "مكان الاستلام",
+  return_location: "مكان التسليم",
+  pickup_actual: "وقت الاستلام الفعلي",
+  handover_by: "المُسلِّم",
+  pickup_inspection_completed: "تم فحص السيارة عند الاستلام",
+  return_actual: "وقت التسليم الفعلي",
+  received_by: "المُستلِم",
+  return_inspection_completed: "تم فحص السيارة عند التسليم",
+  total_rental_charge: "إجمالي قيمة الإيجار",
+  extra_mileage_charge: "تكلفة الكيلومترات الإضافية",
+  fuel_penalty: "غرامة الوقود",
+  damage_penalty: "غرامة التلفيات",
+  grand_total: "الإجمالي الكلي",
+  gl_revenue_posted: "تم ترحيل الإيراد محاسبيًا",
+  closure_notes: "ملاحظات الإغلاق",
+  deposit_returned: "تم إرجاع مبلغ التأمين",
+  cancellation_penalty: "غرامة الإلغاء",
+  gl_penalty_posted: "تم ترحيل الغرامة محاسبيًا",
+  // Recruitment
+  required_profession: "المهنة المطلوبة",
+  target_country: "الدولة المستهدفة",
+  target_count: "العدد المطلوب",
+};
+
+const ENUM_VALUE_LABEL_AR: Record<string, string> = {
+  // Room type (hospitality)
+  single: "مفردة",
+  double: "مزدوجة",
+  twin: "توأم",
+  suite: "جناح",
+  deluxe: "ديلوكس",
+  family: "عائلية",
+  studio: "استوديو",
+  penthouse: "بنتهاوس",
+  // trip_type (travel)
+  one_way: "اتجاه واحد",
+  round_trip: "ذهاب وعودة",
+  multi_city: "عدة مدن",
+  package: "باقة",
+  // insurance_type (rental)
+  basic: "أساسي",
+  comprehensive: "شامل",
+  premium: "بريميوم",
+};
+
+const labelize = (key: string) => FIELD_LABEL_AR[key] ?? key.replace(/_/g, " ");
+const enumValueLabel = (value: string) => ENUM_VALUE_LABEL_AR[value] ?? value;
 
 export default function CaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -692,7 +797,7 @@ function RowField({
         <label className="text-[12px] font-semibold text-on-surface-variant">{label}</label>
         <select {...register(name)} className="input-field h-9 text-body-sm">
           <option value="">—</option>
-          {subProp.enum.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          {subProp.enum.map((opt) => <option key={opt} value={opt}>{enumValueLabel(opt)}</option>)}
         </select>
       </div>
     );
@@ -807,7 +912,7 @@ function RegisteredField({
         </label>
         <select {...register(fieldKey)} className="input-field">
           <option value="">—</option>
-          {prop.enum.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          {prop.enum.map((opt) => <option key={opt} value={opt}>{enumValueLabel(opt)}</option>)}
         </select>
       </div>
     );

@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import tenant_session
 from app.core.events.event_bus import DomainEvent, InvoiceCreatedEvent, get_event_bus
+from app.core.events.invoice_payload import build_invoice_created_payload
 from app.modules.cases.models.core import Case, CaseType
 from app.plugins.hospitality.services.folio import calculate_folio_total
 
@@ -49,10 +50,14 @@ async def _post_checkout_revenue(
     The folio total includes: room charge, board supplement, extras, tax, and service charge.
     Deposits are subtracted to produce the balance due, which is what gets posted.
     """
-    if case.data.get("gl_revenue_posted"):
-        logger.info("Hospitality GL: already posted for case %s — skipping", case.id)
-        return
-
+    # NOTE (P1 item 2): the old `if case.data.get("gl_revenue_posted"): return`
+    # guard is gone on purpose. Posting state now lives in ONE owned place —
+    # tenant.gl_postings, UNIQUE (source_type, source_id, entry_kind) — and
+    # handle_invoice_created reserves that row before writing any journal entry,
+    # so re-publishing for an already-posted case is a harmless no-op there.
+    # The old boolean was a second source of truth that could (and did) disagree
+    # with the ledger: case 01a0a1bc carried gl_revenue_posted=true AND
+    # posting_failed=true while the ledger held zero entries for it.
     meta = ct.meta or {}
     folio = await calculate_folio_total(
         session=session,
@@ -91,42 +96,40 @@ async def _post_checkout_revenue(
     await event_bus.publish(
         InvoiceCreatedEvent(
             tenant_id=tenant_id,
-            payload={
-                "source": "hospitality_plugin",
-                "source_id": str(case.id),
-                "invoice_id": str(case.id),
-                "invoice_number": invoice_number,
-                "customer_name": customer_name,
-                "entry_type": "hotel_checkout_revenue",
-                "description": (
+            payload=build_invoice_created_payload(
+                source="hospitality_plugin",
+                source_id=str(case.id),
+                entry_type="hospitality_checkout_revenue",
+                invoice_number=invoice_number,
+                customer_name=customer_name,
+                amount=folio.total,
+                currency=folio.currency,
+                revenue_account_code=revenue_account,
+                ar_account_code=receivable_account,
+                entry_date=folio.check_out,
+                description=(
                     f"Hotel Checkout — {customer_name}"
                     f" · {folio.nights} ليلة · {folio.check_in} → {folio.check_out}"
                 ),
-                "amount": float(folio.total),
-                "balance_due": float(folio.balance_due),
-                "currency": folio.currency,
-                "revenue_account_code": revenue_account,
-                "receivable_account_code": receivable_account,
-                "ar_account_code": receivable_account,
-                "entry_date": folio.check_out,
+                balance_due=float(folio.balance_due),
                 # Breakdown for audit trail
-                "room_charge": float(folio.room_charge),
-                "board_charge": float(folio.board_charge),
-                "extras_total": float(folio.extras_total),
-                "service_charge": float(folio.service_charge),
-                "tax_amount": float(folio.tax_amount),
-                "deposit_offset": float(folio.deposit_total),
-                "nights": folio.nights,
-                "line_items": line_summary,
-            },
+                room_charge=float(folio.room_charge),
+                board_charge=float(folio.board_charge),
+                extras_total=float(folio.extras_total),
+                service_charge=float(folio.service_charge),
+                tax_amount=float(folio.tax_amount),
+                deposit_offset=float(folio.deposit_total),
+                nights=folio.nights,
+                line_items=line_summary,
+            ),
         ),
         session=session,
     )
 
-    # Stamp the idempotency flag and persist the folio total on the case
+    # Persist the folio total (a business figure, kept) — but NOT a posting
+    # flag: whether the GL actually received this is gl_postings' answer alone.
     case.data = {
         **case.data,
-        "gl_revenue_posted": True,
         "folio_total": float(folio.total),
         "final_folio_total": float(folio.total),
     }
@@ -140,14 +143,12 @@ async def _post_cancellation_penalty(
     tenant_id: str,
 ) -> None:
     """Posts cancellation penalty as earned revenue (if not already posted)."""
-    if case.data.get("gl_refund_posted"):
-        return
+    # No flag guard: gl_postings (entry_kind hospitality_cancellation_penalty)
+    # is the single authority on whether this was already posted.
 
     from decimal import Decimal
     penalty = Decimal(str(case.data.get("cancellation_penalty", "0") or "0"))
     if penalty <= 0:
-        case.data = {**case.data, "gl_refund_posted": True}
-        session.add(case)
         return
 
     meta = ct.meta or {}
@@ -156,27 +157,24 @@ async def _post_cancellation_penalty(
     await event_bus.publish(
         InvoiceCreatedEvent(
             tenant_id=tenant_id,
-            payload={
-                "source": "hospitality_plugin",
-                "source_id": str(case.id),
-                "invoice_id": str(case.id),
-                "invoice_number": f"HOSP-{case.id.hex[:8].upper()}-CANC",
-                "customer_name": customer_name,
-                "entry_type": "cancellation_penalty",
-                "description": f"Hotel Cancellation Penalty — {customer_name}",
-                "amount": float(penalty),
-                "currency": case.data.get("currency", "EGP"),
-                "revenue_account_code": meta.get("revenue_gl_account", "4010"),
-                "receivable_account_code": receivable_account,
-                "ar_account_code": receivable_account,
-                "entry_date": __import__("datetime").date.today().isoformat(),
-                "case_stage": _CANCEL_STAGE,
-            },
+            payload=build_invoice_created_payload(
+                source="hospitality_plugin",
+                source_id=str(case.id),
+                entry_type="hospitality_cancellation_penalty",
+                invoice_number=f"HOSP-{case.id.hex[:8].upper()}-CANC",
+                customer_name=customer_name,
+                amount=penalty,
+                currency=case.data.get("currency", "EGP"),
+                revenue_account_code=meta.get("revenue_gl_account", "4010"),
+                ar_account_code=receivable_account,
+                entry_date=__import__("datetime").date.today(),
+                description=f"Hotel Cancellation Penalty — {customer_name}",
+                case_stage=_CANCEL_STAGE,
+            ),
         ),
         session=session,
     )
 
-    case.data = {**case.data, "gl_refund_posted": True}
     session.add(case)
 
 

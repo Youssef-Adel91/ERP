@@ -16,6 +16,13 @@ from app.core.db.base import TenantBase
 class ContactType(StrEnum):
     CUSTOMER = "customer"
     SUPPLIER = "supplier"
+    # Bug fix (live-reproduced, 20 Sep 2026): recruitment job orders link a
+    # sponsor/employer Contact (JobOrder.sponsor_id -> contacts.id, see
+    # app/plugins/recruitment/models/job_orders.py) but this enum only ever
+    # had customer/supplier, so there was no honest way to create a
+    # sponsor/employer contact — see n5o6p7q8r9s0_add_employer_contact_type.py
+    # for the matching DB enum migration.
+    EMPLOYER = "employer"
 
 
 class ContactStatus(StrEnum):

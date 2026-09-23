@@ -60,9 +60,18 @@ class FolioItem(TenantBase, table=True):
     # Linked to the Case by value (no FK across schemas)
     case_id: uuid.UUID = Field(index=True)
 
+    # schema="tenant" is REQUIRED, not cosmetic: it is the placeholder token
+    # that schema_translate_map (tenant_session / provisioning create_all) and
+    # alembic/tenant/env.py's rewriter both resolve to the real tenant schema.
+    # Without it SQLAlchemy emitted an UNQUALIFIED `CREATE TYPE
+    # folio_item_category`, which lands in whatever search_path resolves to
+    # (public) and is then shared by every tenant — the same class of bug
+    # w3r8s9t0u1v2_create_employeestatus_type.py had to repair for
+    # `employeestatus`. Every other tenant enum in this codebase
+    # (accounttype, journalentrystatus, ...) declares schema="tenant".
     category: FolioItemCategory = Field(
         sa_column=Column(
-            sa.Enum(FolioItemCategory, name="folio_item_category"),
+            sa.Enum(FolioItemCategory, name="folio_item_category", schema="tenant"),
             nullable=False,
         )
     )

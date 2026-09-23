@@ -215,7 +215,7 @@ async def login(
         raise AuthenticationError("Account is deactivated. Contact your administrator.")
 
     # Update last login timestamp
-    user.last_login_at = datetime.now(UTC).replace(tzinfo=None)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
 
     # Issue tokens

@@ -56,9 +56,16 @@ class SupplierPayment(DocumentLifecycleMixin, TenantBase, table=True):
         default=Decimal("0.0000"),
         sa_column=Column(Numeric(18, 4), nullable=False),
     )
+    # Bare sa.Enum(SupplierPaymentStatus) with no schema="tenant" -- same bug
+    # class already fixed for Employee.status/Payslip.status/ImportDossier.status
+    # (see NOTE in app/modules/hr/models/core.py). Fixed live 2026-09-23 -- see
+    # z3c4d5e6f7g8_create_supplierpaymentstatus_type.py.
     status: SupplierPaymentStatus = Field(
         default=SupplierPaymentStatus.DRAFT,
-        sa_column=Column(sa.Enum(SupplierPaymentStatus), nullable=False),
+        sa_column=Column(
+            sa.Enum(SupplierPaymentStatus, name="supplierpaymentstatus", schema="tenant", create_type=False),
+            nullable=False,
+        ),
     )
 
     allocations: list["PaymentAllocation"] = Relationship(

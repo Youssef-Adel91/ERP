@@ -20,7 +20,11 @@ class Announcement(SQLModel, table=True):
     content: str
 
     created_by: UUID | None = Field(default=None)
+    # Same naive-datetime bug already fixed for User.last_login_at (see
+    # app/modules/system/router.py) -- this field has no explicit sa_type,
+    # so it falls back to the project's default strict tz-aware datetime
+    # column type. Fixed live, 2026-09-23.
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
         sa_column_kwargs={"server_default": text("now()")},
     )

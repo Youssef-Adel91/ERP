@@ -20,14 +20,25 @@ import {
   CheckCircle2,
   CalendarSearch,
   Fuel,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 interface Vehicle {
   id: string;
   code: string;
   name: string;
+  name_ar?: string | null;
   is_active: boolean;
-  attributes: { make?: string; model?: string; year?: number; current_mileage?: number; plate_number?: string };
+  attributes: {
+    make?: string;
+    model?: string;
+    year?: number;
+    current_mileage?: number;
+    plate_number?: string;
+    // Echoed back by the API and preserved verbatim on edit — see VehicleModal.
+    [key: string]: unknown;
+  };
 }
 
 interface VehicleAvailability extends Vehicle {
@@ -110,6 +121,10 @@ export default function RentalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  // Fleet edit/delete: PATCH /rental/fleet/{id} and DELETE /rental/fleet/{id}
+  // existed server-side but were unreachable from the UI (same gap as rooms).
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [deletingVehicle, setDeletingVehicle] = useState<Vehicle | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -176,15 +191,51 @@ export default function RentalPage() {
                   <div className="flex items-center gap-3 mt-3 text-body-sm text-on-surface-variant">
                     <span>{v.attributes.make} {v.attributes.model} · {v.attributes.year}</span>
                   </div>
-                  <div className="flex items-center gap-1 mt-1 text-body-sm text-outline">
-                    <Gauge className="w-3.5 h-3.5" /> {Number(v.attributes.current_mileage ?? 0).toLocaleString("ar-EG")} كم
+                  <div className="flex items-center justify-between gap-2 mt-1 text-body-sm text-outline">
+                    <span className="flex items-center gap-1">
+                      <Gauge className="w-3.5 h-3.5" /> {Number(v.attributes.current_mileage ?? 0).toLocaleString("ar-EG")} كم
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`تعديل المركبة ${v.code}`}
+                        title="تعديل"
+                        onClick={() => setEditingVehicle(v)}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary-container/10 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`حذف المركبة ${v.code}`}
+                        title="حذف"
+                        onClick={() => setDeletingVehicle(v)}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/30 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </span>
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {modalOpen && <CreateVehicleModal onClose={() => setModalOpen(false)} onCreated={() => { setModalOpen(false); fetchAll(); }} />}
+          {modalOpen && <VehicleModal onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); fetchAll(); }} />}
+          {editingVehicle && (
+            <VehicleModal
+              vehicle={editingVehicle}
+              onClose={() => setEditingVehicle(null)}
+              onSaved={() => { setEditingVehicle(null); fetchAll(); }}
+            />
+          )}
+          {deletingVehicle && (
+            <DeleteVehicleDialog
+              vehicle={deletingVehicle}
+              onClose={() => setDeletingVehicle(null)}
+              onDeleted={() => { setDeletingVehicle(null); fetchAll(); }}
+            />
+          )}
         </>
       ) : (
         <RentalsTab vehicles={vehicles} />
@@ -193,27 +244,57 @@ export default function RentalPage() {
   );
 }
 
-function CreateVehicleModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function VehicleModal({ vehicle, onClose, onSaved }: { vehicle?: Vehicle; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!vehicle;
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<FormIn, any, FormOut>({
     resolver: zodResolver(schema),
-    defaultValues: { code: "", name: "", plate_number: "", make: "", model: "", year: 2024 },
+    defaultValues: vehicle
+      ? {
+          code: vehicle.code,
+          name: vehicle.name,
+          plate_number: (vehicle.attributes.plate_number as string) ?? "",
+          make: (vehicle.attributes.make as string) ?? "",
+          model: (vehicle.attributes.model as string) ?? "",
+          year: vehicle.attributes.year ?? 2024,
+        }
+      : { code: "", name: "", plate_number: "", make: "", model: "", year: 2024 },
   });
 
   const onSubmit = async (data: FormOut) => {
     setSubmitting(true);
     setErrorMsg("");
     try {
-      await apiClient.post("/rental/fleet", {
-        code: data.code,
-        name: data.name,
-        attributes: { plate_number: data.plate_number, make: data.make, model: data.model, year: data.year },
-      });
-      onCreated();
+      // Spread the vehicle's CURRENT attributes first in edit mode: the backend
+      // merges the parsed VehicleAttributes, so any field omitted here would
+      // return as its default (current_mileage: 0, transmission: "automatic",
+      // ...) and overwrite the real odometer reading.
+      const attributes = {
+        ...(vehicle?.attributes ?? {}),
+        plate_number: data.plate_number,
+        make: data.make,
+        model: data.model,
+        year: data.year,
+      };
+      if (isEdit) {
+        // VehicleUpdate accepts name/name_ar/is_active/attributes — `code` is
+        // immutable server-side, so it is read-only in edit mode.
+        await apiClient.patch(`/rental/fleet/${vehicle!.id}`, { name: data.name, attributes });
+      } else {
+        await apiClient.post("/rental/fleet", { code: data.code, name: data.name, attributes });
+      }
+      onSaved();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة المركبة. تأكد من تفعيل موديول التأجير أولاً."));
+      setErrorMsg(
+        pickDetail(
+          axiosErr,
+          isEdit
+            ? "تعذر تعديل المركبة. التعديل متاح لصاحب الحساب أو المدير فقط."
+            : "تعذر إضافة المركبة. تأكد من تفعيل موديول التأجير أولاً.",
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -223,13 +304,13 @@ function CreateVehicleModal({ onClose, onCreated }: { onClose: () => void; onCre
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
       <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-headline-sm text-headline-sm text-on-surface">مركبة جديدة</h3>
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">{isEdit ? `تعديل المركبة ${vehicle!.code}` : "مركبة جديدة"}</h3>
           <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
         </div>
         {errorMsg && <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error"><AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}</div>}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">كود المركبة</label><input {...register("code")} dir="ltr" className="input-field font-mono" />{errors.code && <p className="text-body-sm text-error">{errors.code.message}</p>}</div>
+            <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">كود المركبة</label><input {...register("code")} dir="ltr" readOnly={isEdit} className={`input-field font-mono ${isEdit ? "opacity-60 cursor-not-allowed" : ""}`} />{errors.code && <p className="text-body-sm text-error">{errors.code.message}</p>}</div>
             <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">اسم العرض</label><input {...register("name")} className="input-field" />{errors.name && <p className="text-body-sm text-error">{errors.name.message}</p>}</div>
           </div>
           <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">رقم اللوحة</label><input {...register("plate_number")} dir="ltr" className="input-field font-mono" />{errors.plate_number && <p className="text-body-sm text-error">{errors.plate_number.message}</p>}</div>
@@ -239,9 +320,50 @@ function CreateVehicleModal({ onClose, onCreated }: { onClose: () => void; onCre
             <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">السنة</label><input type="number" {...register("year")} dir="ltr" className="input-field font-mono" /></div>
           </div>
           <button type="submit" disabled={submitting} className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-primary text-on-primary font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70 mt-2">
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} حفظ المركبة
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {isEdit ? "حفظ التعديلات" : "حفظ المركبة"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteVehicleDialog({ vehicle, onClose, onDeleted }: { vehicle: Vehicle; onClose: () => void; onDeleted: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const onConfirm = async () => {
+    setSubmitting(true);
+    setErrorMsg("");
+    try {
+      await apiClient.delete(`/rental/fleet/${vehicle.id}`);
+      onDeleted();
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      setErrorMsg(pickDetail(axiosErr, "تعذر حذف المركبة. الحذف متاح لصاحب الحساب أو المدير فقط."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
+      <div className="w-full max-w-sm bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">حذف المركبة</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        {errorMsg && <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error"><AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}</div>}
+        <p className="text-body-md text-on-surface-variant mb-6">
+          هيتم إخفاء المركبة <span className="font-semibold text-on-surface">{vehicle.name}</span> (لوحة <span className="font-data-mono" dir="ltr">{String(vehicle.attributes.plate_number ?? vehicle.code)}</span>) من البحث والحجوزات الجديدة.
+          عقود التأجير الحالية عليها مش هتتلغي.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 h-11 rounded-lg border border-outline-variant text-on-surface font-semibold text-body-md hover:bg-surface-container transition-colors">إلغاء</button>
+          <button onClick={onConfirm} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-error text-on-error font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70">
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد الحذف
+          </button>
+        </div>
       </div>
     </div>
   );

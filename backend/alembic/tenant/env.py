@@ -32,6 +32,7 @@ import app.core.audit.models
 import app.core.observability.models
 import app.core.sequences.models
 import app.modules.accounting.models
+import app.modules.accounting.models.posting  # noqa: F401
 import app.modules.contacts.models
 
 # Import models to ensure they are registered with TenantBase.metadata
@@ -46,6 +47,20 @@ import app.modules.logistics.models  # noqa: F401
 import app.modules.pos.models  # noqa: F401
 import app.modules.purchasing.models  # noqa: F401
 import app.plugins.travel.models  # noqa: F401
+
+# Plugin-owned tenant tables. These MUST be imported here or they are absent
+# from TenantBase.metadata during `alembic revision --autogenerate`, so
+# autogenerate silently emits nothing for them. That is exactly how
+# `folio_items` (hospitality) and `vehicle_inspections` (rental) ended up
+# defined as real SQLModel tables with no migration creating them in any tenant
+# schema — live-confirmed 14 Sep 2026 as an UndefinedTableError 500 on every
+# hotel check-out and every vehicle return. See
+# f2a3b4c5d6e7_add_folio_items_and_vehicle_inspections.py.
+import app.plugins.hospitality.models.folio  # noqa: F401
+import app.plugins.rental.models.inspection  # noqa: F401
+import app.plugins.recruitment.models.candidate  # noqa: F401
+import app.plugins.recruitment.models.interview  # noqa: F401
+import app.plugins.recruitment.models.job_orders  # noqa: F401
 from app.core.config import settings
 from app.core.db.base import TenantBase
 

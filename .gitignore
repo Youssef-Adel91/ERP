@@ -85,3 +85,7 @@ stitch_egyptian_erp_design_system_generator/
 # ── Scratch / one-off scripts ─────────────────────────────────────────────────
 backend/fix_*.py
 backend/test_*.py
+
+# ── Local scratch (not part of repo history) ─────────────────────────────────
+/.venv/
+backend_OLD_INCOMPLETE_BACKUP/

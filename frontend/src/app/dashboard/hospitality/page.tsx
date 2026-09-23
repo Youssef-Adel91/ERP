@@ -19,12 +19,15 @@ import {
   Receipt,
   CheckCircle2,
   CalendarSearch,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 interface Room {
   id: string;
   code: string;
   name: string;
+  name_ar?: string | null;
   is_active: boolean;
   attributes: { room_type?: string; floor?: number; capacity?: number; base_rate?: number };
 }
@@ -93,6 +96,24 @@ type FormIn = z.input<typeof schema>;
 
 const roomTypes = ["single", "double", "twin", "suite", "deluxe", "family", "studio", "penthouse"];
 
+// Bug fix (live-reproduced, 20 Sep 2026): room_type is stored as a raw
+// English enum value (Resource.attributes.room_type), and the UI showed
+// that raw value verbatim ("double", "suite", ...) inside an otherwise
+// fully-Arabic page — both in the room card and in the create/edit form's
+// dropdown. Added Arabic labels for display; the underlying stored value
+// (and the <option value=...>) stays the English enum, unchanged, since
+// that's still what the backend expects.
+const roomTypeLabel: Record<string, string> = {
+  single: "مفردة",
+  double: "مزدوجة",
+  twin: "توأم",
+  suite: "جناح",
+  deluxe: "ديلوكس",
+  family: "عائلية",
+  studio: "استوديو",
+  penthouse: "بنتهاوس",
+};
+
 const stageLabel: Record<string, string> = {
   booked: "محجوز",
   confirmed: "مؤكد",
@@ -119,6 +140,11 @@ export default function HospitalityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  // Room edit/delete: the backend has had PATCH /hospitality/rooms/{id} and
+  // DELETE /hospitality/rooms/{id} all along, but the card exposed no way to
+  // reach either — clicking a room did nothing at all (live-confirmed gap).
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -182,16 +208,52 @@ export default function HospitalityPage() {
                   </div>
                   <h3 className="font-headline-sm text-headline-sm text-on-surface">{r.name}</h3>
                   <p className="text-body-sm text-outline font-data-mono" dir="ltr">{r.code}</p>
-                  <div className="flex items-center gap-3 mt-3 text-body-sm text-on-surface-variant">
-                    <span>{r.attributes.room_type}</span>
-                    <span className="flex items-center gap-1"><Users2 className="w-3.5 h-3.5" /> {r.attributes.capacity}</span>
+                  <div className="flex items-center justify-between gap-3 mt-3 text-body-sm text-on-surface-variant">
+                    <div className="flex items-center gap-3">
+                      <span>{roomTypeLabel[r.attributes.room_type ?? ""] ?? r.attributes.room_type}</span>
+                      <span className="flex items-center gap-1"><Users2 className="w-3.5 h-3.5" /> {r.attributes.capacity}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`تعديل الغرفة ${r.code}`}
+                        title="تعديل"
+                        onClick={() => setEditingRoom(r)}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary-container/10 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`حذف الغرفة ${r.code}`}
+                        title="حذف"
+                        onClick={() => setDeletingRoom(r)}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/30 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {modalOpen && <CreateRoomModal onClose={() => setModalOpen(false)} onCreated={() => { setModalOpen(false); fetchAll(); }} />}
+          {modalOpen && <RoomModal onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); fetchAll(); }} />}
+          {editingRoom && (
+            <RoomModal
+              room={editingRoom}
+              onClose={() => setEditingRoom(null)}
+              onSaved={() => { setEditingRoom(null); fetchAll(); }}
+            />
+          )}
+          {deletingRoom && (
+            <DeleteRoomDialog
+              room={deletingRoom}
+              onClose={() => setDeletingRoom(null)}
+              onDeleted={() => { setDeletingRoom(null); fetchAll(); }}
+            />
+          )}
         </>
       ) : (
         <ReservationsTab rooms={rooms} />
@@ -200,27 +262,57 @@ export default function HospitalityPage() {
   );
 }
 
-function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function RoomModal({ room, onClose, onSaved }: { room?: Room; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!room;
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<FormIn, any, FormOut>({
     resolver: zodResolver(schema),
-    defaultValues: { code: "", name: "", room_type: "double", floor: 1, capacity: 2, base_rate: 0 },
+    defaultValues: room
+      ? {
+          code: room.code,
+          name: room.name,
+          room_type: room.attributes.room_type ?? "double",
+          floor: room.attributes.floor ?? 1,
+          capacity: room.attributes.capacity ?? 2,
+          base_rate: room.attributes.base_rate ?? 0,
+        }
+      : { code: "", name: "", room_type: "double", floor: 1, capacity: 2, base_rate: 0 },
   });
 
   const onSubmit = async (data: FormOut) => {
     setSubmitting(true);
     setErrorMsg("");
     try {
-      await apiClient.post("/hospitality/rooms", {
-        code: data.code,
-        name: data.name,
-        attributes: { room_type: data.room_type, floor: data.floor, capacity: data.capacity, base_rate: data.base_rate },
-      });
-      onCreated();
+      // In edit mode, spread the room's CURRENT attributes first: the backend
+      // merges whatever RoomAttributes resolves to, and any field omitted here
+      // would come back as its Pydantic default (amenities: [], has_balcony:
+      // false, ...) and silently overwrite real data.
+      const attributes = {
+        ...(room?.attributes ?? {}),
+        room_type: data.room_type,
+        floor: data.floor,
+        capacity: data.capacity,
+        base_rate: data.base_rate,
+      };
+      if (isEdit) {
+        // RoomUpdate accepts name/name_ar/is_active/attributes — `code` is
+        // immutable server-side, so it is shown read-only in edit mode.
+        await apiClient.patch(`/hospitality/rooms/${room!.id}`, { name: data.name, attributes });
+      } else {
+        await apiClient.post("/hospitality/rooms", { code: data.code, name: data.name, attributes });
+      }
+      onSaved();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(pickDetail(axiosErr, "تعذر إضافة الغرفة. تأكد من تفعيل موديول الضيافة أولاً."));
+      setErrorMsg(
+        pickDetail(
+          axiosErr,
+          isEdit
+            ? "تعذر تعديل الغرفة. التعديل متاح لصاحب الحساب أو المدير فقط."
+            : "تعذر إضافة الغرفة. تأكد من تفعيل موديول الضيافة أولاً.",
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -230,19 +322,19 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
       <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-headline-sm text-headline-sm text-on-surface">غرفة جديدة</h3>
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">{isEdit ? `تعديل الغرفة ${room!.code}` : "غرفة جديدة"}</h3>
           <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
         </div>
         {errorMsg && <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error"><AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}</div>}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">رقم الغرفة</label><input {...register("code")} dir="ltr" className="input-field font-mono" />{errors.code && <p className="text-body-sm text-error">{errors.code.message}</p>}</div>
+            <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">رقم الغرفة</label><input {...register("code")} dir="ltr" readOnly={isEdit} className={`input-field font-mono ${isEdit ? "opacity-60 cursor-not-allowed" : ""}`} />{errors.code && <p className="text-body-sm text-error">{errors.code.message}</p>}</div>
             <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">اسم الغرفة</label><input {...register("name")} className="input-field" />{errors.name && <p className="text-body-sm text-error">{errors.name.message}</p>}</div>
           </div>
           <div className="space-y-1.5">
             <label className="text-body-sm font-semibold text-on-surface-variant">النوع</label>
             <select {...register("room_type")} className="input-field">
-              {roomTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+              {roomTypes.map((t) => <option key={t} value={t}>{roomTypeLabel[t]}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -251,9 +343,50 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <div className="space-y-1.5"><label className="text-body-sm font-semibold text-on-surface-variant">السعر/ليلة</label><input type="number" step="0.01" {...register("base_rate")} dir="ltr" className="input-field font-mono" /></div>
           </div>
           <button type="submit" disabled={submitting} className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-primary text-on-primary font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70 mt-2">
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} حفظ الغرفة
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {isEdit ? "حفظ التعديلات" : "حفظ الغرفة"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteRoomDialog({ room, onClose, onDeleted }: { room: Room; onClose: () => void; onDeleted: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const onConfirm = async () => {
+    setSubmitting(true);
+    setErrorMsg("");
+    try {
+      await apiClient.delete(`/hospitality/rooms/${room.id}`);
+      onDeleted();
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      setErrorMsg(pickDetail(axiosErr, "تعذر حذف الغرفة. الحذف متاح لصاحب الحساب أو المدير فقط."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-gutter" onClick={onClose}>
+      <div className="w-full max-w-sm bg-surface-container-lowest rounded-xl shadow-overlay p-card-padding" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">حذف الغرفة</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        {errorMsg && <div className="flex items-center gap-2 bg-error-container text-on-error-container p-3 rounded-lg mb-4 text-body-sm font-medium border border-error"><AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}</div>}
+        <p className="text-body-md text-on-surface-variant mb-6">
+          هيتم إخفاء الغرفة <span className="font-semibold text-on-surface">{room.name}</span> (رقم <span className="font-data-mono" dir="ltr">{room.code}</span>) من البحث والحجوزات الجديدة.
+          الحجوزات الحالية عليها مش هتتلغي.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 h-11 rounded-lg border border-outline-variant text-on-surface font-semibold text-body-md hover:bg-surface-container transition-colors">إلغاء</button>
+          <button onClick={onConfirm} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-error text-on-error font-bold text-body-md hover:opacity-90 transition-opacity disabled:opacity-70">
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد الحذف
+          </button>
+        </div>
       </div>
     </div>
   );

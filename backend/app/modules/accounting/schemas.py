@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.modules.accounting.models import AccountType, JournalEntryStatus
+from app.modules.accounting.models import AccountType, JournalEntryStatus, PeriodStatus
 
 # ── Account ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,21 @@ class JournalEntryResponse(BaseModel):
     created_at: datetime
     posted_at: datetime | None
     lines: list[TransactionLineResponse]
+
+    model_config = {"from_attributes": True}
+
+
+# ── Accounting Periods (P1 Item 4) ───────────────────────────────────────────
+
+
+class AccountingPeriodResponse(BaseModel):
+    id: UUID
+    name: str
+    start_date: datetime
+    end_date: datetime
+    status: PeriodStatus
+    closed_by: UUID | None
+    closed_at: datetime | None
 
     model_config = {"from_attributes": True}
 

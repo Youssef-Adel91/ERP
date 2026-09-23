@@ -18,7 +18,13 @@ import {
   ChevronLeft,
 } from "lucide-react";
 
-type ContactType = "customer" | "supplier";
+// Bug fix (live-reproduced, 20 Sep 2026): recruitment job orders need a
+// sponsor/employer contact (see recruitment/page.tsx's "صاحب العمل / الكفيل"
+// field), but Contacts only ever offered customer/supplier, so there was no
+// honest way to create one. Added "employer" here to match the backend's
+// ContactType.EMPLOYER (see app/modules/contacts/models.py and the matching
+// n5o6p7q8r9s0 DB migration that adds the enum value).
+type ContactType = "customer" | "supplier" | "employer";
 type ContactStatus = "active" | "blocked" | "archived";
 
 interface Contact {
@@ -56,10 +62,11 @@ const statusTone: Record<ContactStatus, string> = {
 const typeLabel: Record<ContactType, string> = {
   customer: "عميل",
   supplier: "مورّد",
+  employer: "صاحب عمل / كفيل",
 };
 
 const createContactSchema = z.object({
-  contact_type: z.enum(["customer", "supplier"]),
+  contact_type: z.enum(["customer", "supplier", "employer"]),
   name: z.string().min(2, "الاسم مطلوب (حرفين على الأقل)"),
   phone: z.string().optional(),
   email: z.string().email("بريد إلكتروني غير صحيح").optional().or(z.literal("")),
@@ -131,7 +138,7 @@ export default function ContactsPage() {
           />
         </div>
         <div className="flex gap-2">
-          {(["", "customer", "supplier"] as const).map((t) => (
+          {(["", "customer", "supplier", "employer"] as const).map((t) => (
             <button
               key={t || "all"}
               onClick={() => setTypeFilter(t)}
@@ -280,7 +287,7 @@ function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCre
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="flex gap-2">
-            {(["customer", "supplier"] as const).map((t) => (
+            {(["customer", "supplier", "employer"] as const).map((t) => (
               <label key={t} className="flex-1">
                 <input type="radio" value={t} {...register("contact_type")} className="peer sr-only" />
                 <div className="text-center py-2.5 rounded-lg border border-outline-variant text-body-sm font-semibold text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary peer-checked:border-primary cursor-pointer transition-colors">

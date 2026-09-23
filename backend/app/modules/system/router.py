@@ -292,7 +292,7 @@ async def login(
             detail="Account is deactivated. Contact your administrator.",
         )
 
-    user.last_login_at = datetime.now(UTC).replace(tzinfo=None)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
 
     access_token = create_access_token(
