@@ -1,0 +1,45 @@
+# Set default behavior to automatically normalize line endings and convert to LF on commit
+* text=auto eol=lf
+
+# Explicit text files
+*.py     text eol=lf
+*.tsx    text eol=lf
+*.ts     text eol=lf
+*.js     text eol=lf
+*.mjs    text eol=lf
+*.cjs    text eol=lf
+*.json   text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+*.md     text eol=lf
+*.toml   text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.ini    text eol=lf
+*.txt    text eol=lf
+*.env*   text eol=lf
+*.sql    text eol=lf
+
+# Scripts: Windows scripts must use CRLF, Unix scripts must use LF
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+*.sh     text eol=lf
+
+# Binary files
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.svg    text eol=lf
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.eot    binary
+*.zip    binary
+*.tar    binary
+*.gz     binary
+*.7z     binary
