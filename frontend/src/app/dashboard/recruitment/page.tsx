@@ -661,7 +661,7 @@ const candidateProfileSchema = z.object({
   profession: z.string().optional(),
   phone: z.string().optional(),
   expected_salary: z.string().optional(),
-  availability_status: z.string().default("AVAILABLE"),
+  availability_status: z.string().min(1),
   notes: z.string().optional(),
 });
 type CandidateProfileForm = z.infer<typeof candidateProfileSchema>;
