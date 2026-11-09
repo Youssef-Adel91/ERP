@@ -91,7 +91,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
     fields, so this can never drift from what the dashboard shows."""
     revenue = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -102,7 +102,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     receivables = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.debit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -113,7 +113,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     payables = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -394,7 +394,7 @@ async def get_revenue_trend(db: AsyncSession, months: int = 6) -> dict[str, Any]
     range_end = date(end_year, end_month, 1)
 
     rows = await db.execute(
-        select(JournalEntry.entry_date, TransactionLine.credit)
+        select(JournalEntry.entry_date, TransactionLine.credit - TransactionLine.debit)
         .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == JournalEntryStatus.POSTED,

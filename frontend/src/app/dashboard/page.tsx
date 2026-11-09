@@ -26,7 +26,6 @@ import {
   Landmark,
   ArrowDownToLine,
   ArrowUpFromLine,
-  Info,
   Sparkles,
 } from "lucide-react";
 
@@ -114,30 +113,6 @@ function KpiCard({
       <p className="text-body-sm text-outline font-medium">{label}</p>
       <h3 className="font-headline-md text-headline-md mt-1" dir="ltr">{value}</h3>
       <p className="text-[10px] text-outline-variant mt-2">مقارنة بالشهر الماضي</p>
-    </div>
-  );
-}
-
-// ── Demo Data Notice ────────────────────────────────────────────────────────
-// Replaces three previously-fake charts (revenue trend, expense breakdown,
-// branch performance) that rendered invented numbers and fictional branch
-// names not connected to any real tenant data. Per
-// docs/Nexus_ERP_Audit_Report.md §15's own proposed remedy, a chart backed
-// by real aggregation logic (branch revenue, expense-category breakdown)
-// isn't wired up here yet — that requires business logic (branch/cost-center
-// data model) not yet confirmed to exist cleanly for this tenant. Showing an
-// honest placeholder is safer than either shipping fabricated numbers or
-// guessing at unverified aggregation logic.
-function DemoDataNotice({ title }: { title: string }) {
-  return (
-    <div className="glass-card rounded-xl p-card-padding shadow-card flex flex-col items-center justify-center text-center min-h-[200px] gap-3">
-      <div className="p-2 bg-surface-container rounded-lg">
-        <Info className="w-5 h-5 text-outline" />
-      </div>
-      <h4 className="font-headline-sm text-headline-sm">{title}</h4>
-      <p className="text-body-sm text-on-surface-variant max-w-xs">
-        هذا الرسم البياني غير متاح بعد — يحتاج ربطًا ببيانات حقيقية لم تُفعَّل في هذا الإصدار.
-      </p>
     </div>
   );
 }
@@ -349,32 +324,20 @@ export default function DashboardPage() {
             <ExpenseBreakdownChart />
           </div>
 
-          {/* ── Branch Performance ───────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-            <DemoDataNotice title="أداء الفروع الكبرى" />
-
-            {/* Update highlight card */}
-            <div className="relative rounded-xl overflow-hidden shadow-card group min-h-[200px]">
-              <div className="absolute inset-0 z-10 bg-gradient-to-l from-primary/90 to-primary-container/70 flex flex-col justify-center p-card-padding text-white">
-                <h4 className="font-headline-md text-headline-md mb-2">تحديثات النظام الجديدة</h4>
-                <p className="text-body-md opacity-90 max-w-xs mb-6">
-                  لقد قمنا بتحديث نظام إدارة المخازن ليتوافق مع معايير الفاتورة الإلكترونية المصرية الجديدة.
-                </p>
-                <Link
-                  href="/dashboard/eta"
-                  className="bg-surface-container-lowest text-primary px-6 py-2 rounded-lg font-bold w-fit hover:bg-opacity-90 transition-all active:scale-95 text-body-md"
-                >
-                  استكشف التحديث
-                </Link>
-              </div>
-              <div
-                className="absolute inset-0 transition-transform duration-700 group-hover:scale-110"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #2540f0 0%, #2540f0 40%, #7c3aed 100%)",
-                }}
-              />
+          {/* ── E-invoicing call to action (static, factual: no fabricated figures) ── */}
+          <div className="glass-card rounded-xl shadow-card p-card-padding flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="font-headline-sm text-headline-sm mb-1">الفاتورة الإلكترونية (ETA)</h4>
+              <p className="text-body-md text-on-surface-variant max-w-xl">
+                اربط حسابك بمصلحة الضرائب المصرية وأرسل فواتيرك المرحّلة من صفحة المبيعات.
+              </p>
             </div>
+            <Link
+              href="/dashboard/eta"
+              className="bg-primary text-on-primary px-6 py-2 rounded-lg font-bold w-fit hover:opacity-90 transition-all active:scale-95 text-body-md"
+            >
+              إعدادات الفاتورة الإلكترونية
+            </Link>
           </div>
 
           {/* ── Recent Transactions Table ─────────────────────── */}
