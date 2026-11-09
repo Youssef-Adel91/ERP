@@ -89,7 +89,7 @@ async def get_dashboard_metrics(
             TransactionLine.account_code == "1200",
         ),
     )
-    total_receivables = ar_result.scalar_one() or Decimal("0")
+    total_receivables = max(ar_result.scalar_one() or Decimal("0"), Decimal("0"))
 
     # Outstanding payables (credit - debit on AP 2100)
     ap_result = await db.execute(

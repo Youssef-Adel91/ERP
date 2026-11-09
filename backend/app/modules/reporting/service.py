@@ -145,7 +145,12 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     return {
         "total_revenue_egp": float(revenue),
-        "total_receivables_egp": float(receivables),
+        # A negative AR balance means customers are in credit (e.g. a return
+        # on an already-paid invoice, refund not yet paid out). Report
+        # outstanding receivables as >= 0 and surface the credit separately
+        # so neither the UI nor the LLM mis-reads a minus sign.
+        "total_receivables_egp": float(max(receivables, Decimal("0"))),
+        "customer_credit_balance_egp": float(max(-receivables, Decimal("0"))),
         "total_payables_egp": float(payables),
         "cash_balance_egp": float(cash_debit - cash_credit),
         "source": "posted journal_entries / transaction_lines (accounts 4xxx revenue, "

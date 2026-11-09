@@ -110,7 +110,7 @@ function LoginForm() {
             <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">بوابة العملاء</h1>
           </div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface-variant">
-            {step === "phone" ? "سجّل الدخول لعرض فواتيرك ودفعها" : "أدخل رمز التحقق المرسل إليك"}
+            {step === "phone" ? "سجّل الدخول لعرض فواتيرك ومتابعتها" : "أدخل رمز التحقق المرسل إليك"}
           </h2>
         </div>
 
