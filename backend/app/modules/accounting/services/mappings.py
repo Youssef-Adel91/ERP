@@ -202,6 +202,14 @@ def _normalize_key(key: str | AccountMappingKey) -> AccountMappingKey:
         raise KeyError(f"Unsupported accounting mapping key: '{key}'") from exc
 
 
+def _get_session_account_cache(session: AsyncSession) -> dict[str, Account]:
+    cache = session.info.get("_default_account_cache")
+    if cache is None:
+        cache = {}
+        session.info["_default_account_cache"] = cache
+    return cache
+
+
 async def get_default_account(
     session: AsyncSession,
     mapping_key: str | AccountMappingKey,
@@ -210,11 +218,15 @@ async def get_default_account(
     Resolve and return the default Account for a given mapping key.
 
     If the account does not already exist in the database (by code), it will be
-    created, added to the session, and flushed.
+    created, added to the session, and flushed. Caches resolved accounts in session.info.
     """
     norm_key = _normalize_key(mapping_key)
     config = DEFAULT_ACCOUNT_CONFIGS[norm_key]
     code = config["code"]
+
+    cache = _get_session_account_cache(session)
+    if code in cache:
+        return cache[code]
 
     stmt = select(Account).where(Account.code == code)
     result = await session.execute(stmt)
@@ -237,6 +249,9 @@ async def get_default_account(
         session.add(account)
         await session.flush()
 
+    cache[code] = account
+    session.info.setdefault("_account_cache_by_id", {})[account.id] = account
+    session.info.setdefault("_account_cache_by_code", {})[account.code] = account
     return account
 
 
@@ -262,9 +277,59 @@ async def resolve_default_accounts(
     session: AsyncSession,
     keys: list[str | AccountMappingKey],
 ) -> dict[str, Account]:
-    """Resolve multiple default accounts in a single call, returning a dictionary mapped by key string."""
+    """Resolve multiple default accounts in a single batch query, returning a dictionary mapped by key string."""
+    cache = _get_session_account_cache(session)
+    code_cache = session.info.setdefault("_account_cache_by_code", {})
+    id_cache = session.info.setdefault("_account_cache_by_id", {})
+
     resolved: dict[str, Account] = {}
+    missing_configs: dict[str, tuple[AccountMappingKey, dict]] = {}
+
     for key in keys:
         norm_key = _normalize_key(key)
-        resolved[norm_key.value] = await get_default_account(session, norm_key)
+        config = DEFAULT_ACCOUNT_CONFIGS[norm_key]
+        code = config["code"]
+
+        if code in cache:
+            resolved[norm_key.value] = cache[code]
+        elif code in code_cache:
+            resolved[norm_key.value] = code_cache[code]
+            cache[code] = code_cache[code]
+        else:
+            missing_configs[code] = (norm_key, config)
+
+    if missing_configs:
+        stmt = select(Account).where(Account.code.in_(list(missing_configs.keys())))
+        result = await session.execute(stmt)
+        found_accounts = result.scalars().all()
+
+        for acct in found_accounts:
+            cache[acct.code] = acct
+            code_cache[acct.code] = acct
+            id_cache[acct.id] = acct
+            norm_k, _ = missing_configs.pop(acct.code)
+            resolved[norm_k.value] = acct
+
+        # Any still missing after query need scaffolding
+        for code, (norm_k, config) in missing_configs.items():
+            logger.info(
+                "Default GL account '%s' (code %s) not found in schema; scaffolding automatically.",
+                norm_k.value,
+                code,
+            )
+            acct = Account(
+                code=code,
+                name=config["name"],
+                name_ar=config.get("name_ar"),
+                account_type=config["account_type"],
+                is_active=True,
+                is_system=True,
+            )
+            session.add(acct)
+            await session.flush()
+            cache[code] = acct
+            code_cache[code] = acct
+            id_cache[acct.id] = acct
+            resolved[norm_k.value] = acct
+
     return resolved

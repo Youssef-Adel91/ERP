@@ -65,12 +65,24 @@ async def create_journal_entry(
     from app.modules.accounting.models.core import AccountingPeriod
     entry_start_dt = datetime.combine(entry_date, time.min, tzinfo=UTC)
     entry_end_dt = datetime.combine(entry_date, time.max, tzinfo=UTC)
-    period_stmt = select(AccountingPeriod).where(
-        AccountingPeriod.start_date <= entry_end_dt,
-        AccountingPeriod.end_date >= entry_start_dt,
-    )
-    period_res = await session.execute(period_stmt)
-    period = period_res.scalars().first()
+
+    cached_period = session.info.get("_open_accounting_period")
+    if (
+        cached_period is not None
+        and cached_period.start_date <= entry_end_dt
+        and cached_period.end_date >= entry_start_dt
+        and not cached_period.is_closed
+    ):
+        period = cached_period
+    else:
+        period_stmt = select(AccountingPeriod).where(
+            AccountingPeriod.start_date <= entry_end_dt,
+            AccountingPeriod.end_date >= entry_start_dt,
+        )
+        period_res = await session.execute(period_stmt)
+        period = period_res.scalars().first()
+        if period and not period.is_closed:
+            session.info["_open_accounting_period"] = period
 
     if period is None:
         raise ClosedPeriodError(
@@ -131,33 +143,53 @@ async def create_journal_entry(
         )
 
     # ── Resolve Account ID / Code / Name ──────────────────────────────────────
+    id_cache: dict[UUID, Account] = session.info.setdefault("_account_cache_by_id", {})
+    code_cache: dict[str, Account] = session.info.setdefault("_account_cache_by_code", {})
+
+    missing_ids = {
+        pl["account_id"]
+        for pl in parsed_lines
+        if pl["account_id"] and pl["account_id"] not in id_cache and not pl["account_code"]
+    }
+    missing_codes = {
+        pl["account_code"]
+        for pl in parsed_lines
+        if pl["account_code"] and pl["account_code"] not in code_cache and not pl["account_id"]
+    }
+
+    if missing_ids:
+        accts_by_id_res = await session.execute(select(Account).where(Account.id.in_(list(missing_ids))))
+        for acct in accts_by_id_res.scalars().all():
+            id_cache[acct.id] = acct
+            code_cache[acct.code] = acct
+
+    if missing_codes:
+        accts_by_code_res = await session.execute(select(Account).where(Account.code.in_(list(missing_codes))))
+        for acct in accts_by_code_res.scalars().all():
+            code_cache[acct.code] = acct
+            id_cache[acct.id] = acct
+
     for pl in parsed_lines:
         account_id = pl["account_id"]
         account_code = pl["account_code"]
 
         if account_id and not account_code:
-            acct_res = await session.execute(select(Account).where(Account.id == account_id))
-            acct = acct_res.scalar_one_or_none()
+            acct = id_cache.get(account_id)
             if not acct:
                 raise LookupError(f"Account with id '{account_id}' not found.")
             pl["account_code"] = acct.code
             if not pl["account_name"]:
                 pl["account_name"] = acct.name_ar or acct.name
         elif account_code and not account_id:
-            acct_res = await session.execute(select(Account).where(Account.code == account_code))
-            acct = acct_res.scalar_one_or_none()
+            acct = code_cache.get(account_code)
             if not acct:
                 raise LookupError(f"Account with code '{account_code}' not found.")
             pl["account_id"] = acct.id
             if not pl["account_name"]:
-                # Bug fix (live-reproduced, 20 Sep 2026): this snapshotted
-                # Account.name (always English) onto the journal line, so
-                # journal entries and the trial balance (which reads this
-                # snapshot / Account.name directly) showed raw English
-                # account names even for tenants whose Chart of Accounts
-                # tab displays the Arabic name_ar for the same accounts.
-                # Prefer name_ar, falling back to name only when no Arabic
-                # name is set.
+                pl["account_name"] = acct.name_ar or acct.name
+        elif account_id and account_code:
+            acct = id_cache.get(account_id) or code_cache.get(account_code)
+            if acct and not pl["account_name"]:
                 pl["account_name"] = acct.name_ar or acct.name
         elif not account_id and not account_code:
             raise ValueError("Each journal line must specify either 'account_id' or 'account_code'.")
