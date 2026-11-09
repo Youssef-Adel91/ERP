@@ -62,6 +62,28 @@ def _require_payload(payload: dict, key: str, event_id: str) -> str:
 # ── Handler: invoice.created ──────────────────────────────────────────────────
 
 
+def _build_invoice_lines(payload, amount, ar_code, rev_code, customer, invoice_number):
+    """DR AR (gross); CR Revenue (net) and, when the publisher supplies a
+    `tax_amount`, CR VAT payable (2200) so output VAT is not booked as revenue."""
+    zero = Decimal("0.0000")
+    try:
+        tax = Decimal(str(payload.get("tax_amount") or 0)).quantize(Decimal("0.0001"))
+    except (InvalidOperation, ValueError):
+        tax = zero
+    if tax <= 0 or tax >= amount:
+        tax = zero
+    lines = [
+        {"account_code": ar_code, "debit": amount, "credit": zero,
+         "description": f"Receivable: {customer} / {invoice_number}"},
+        {"account_code": rev_code, "debit": zero, "credit": amount - tax,
+         "description": f"Revenue recognized: {invoice_number}"},
+    ]
+    if tax > 0:
+        lines.append({"account_code": "2200", "debit": zero, "credit": tax,
+                      "description": f"Output VAT: {invoice_number}"})
+    return lines
+
+
 @event_bus.subscribe("invoice.created")
 async def handle_invoice_created(event: DomainEvent) -> None:
     """
@@ -224,20 +246,9 @@ async def handle_invoice_created(event: DomainEvent) -> None:
                 # "Sales Revenue" instead of "Vehicle Rental Revenue". The codes
                 # drive the accounting; the names are what a human reads in the
                 # ledger, so they must not lie.
-                lines_data=[
-                    {
-                        "account_code": ar_code,
-                        "debit": amount,
-                        "credit": Decimal("0.0000"),
-                        "description": f"Receivable: {customer} / {invoice_number}",
-                    },
-                    {
-                        "account_code": rev_code,
-                        "debit": Decimal("0.0000"),
-                        "credit": amount,
-                        "description": f"Revenue recognized: {invoice_number}",
-                    },
-                ],
+                lines_data=_build_invoice_lines(
+                    payload, amount, ar_code, rev_code, customer, invoice_number
+                ),
                 reference=f"JE-{invoice_number}",
                 reference_id=UUID(source_id_str) if source_id_str else None,
                 source_type="invoice",
