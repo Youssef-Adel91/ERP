@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SUPPORT_EMAIL } from "@/lib/brand";
 import Link from "next/link";
 import {
   Wallet, TrendingUp, Package, Users, Truck, Plane, Coffee, Car,
@@ -444,9 +445,9 @@ export default function LandingPage() {
           <div className="border-t border-sidebar-border pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-sm">© {new Date().getFullYear()} Trust Core. جميع الحقوق محفوظة.</p>
             <div className="flex items-center gap-4 text-sm">
-              <a href="mailto:youssefffadel555@gmail.com" className="flex items-center gap-1 hover:text-white transition-colors">
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="flex items-center gap-1 hover:text-white transition-colors">
                 <Mail className="w-3.5 h-3.5" />
-                youssefffadel555@gmail.com
+                {SUPPORT_EMAIL}
               </a>
               <div className="flex items-center gap-1">
                 <Globe className="w-3.5 h-3.5" />

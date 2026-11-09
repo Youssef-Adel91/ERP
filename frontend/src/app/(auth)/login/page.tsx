@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SUPPORT_EMAIL } from "@/lib/brand";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -283,7 +284,7 @@ export default function LoginPage() {
               <span className="text-outline-variant">|</span>
               <a href="#" className="hover:text-primary transition-colors">شروط الاستخدام</a>
               <span className="text-outline-variant">|</span>
-              <a href="mailto:youssefffadel555@gmail.com?subject=Trust%20Core%20Support" className="hover:text-primary transition-colors">الدعم الفني</a>
+              <a href={`mailto:${SUPPORT_EMAIL}?subject=Trust%20Core%20Support`} className="hover:text-primary transition-colors">الدعم الفني</a>
             </div>
           </div>
         </footer>

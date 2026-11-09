@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SUPPORT_EMAIL } from "@/lib/brand";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -370,7 +371,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             <a
-              href="mailto:youssefffadel555@gmail.com?subject=Trust%20Core%20Support"
+              href={`mailto:${SUPPORT_EMAIL}?subject=Trust%20Core%20Support`}
               className="p-2 rounded-md hover:bg-surface-container-low transition-colors text-on-surface-variant"
               title="الدعم الفني"
             >
