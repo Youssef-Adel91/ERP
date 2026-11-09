@@ -9,6 +9,7 @@ import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 
 const resetPasswordSchema = z
   .object({
@@ -61,13 +62,7 @@ function ResetPasswordInner() {
   };
 
   return (
-    <div
-      className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "none",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[440px] animate-in fade-in duration-700 slide-in-from-bottom-4">
         {/* Logo & Header */}
         <div className="text-center mb-10">
@@ -190,7 +185,7 @@ function ResetPasswordInner() {
           </div>
         </div>
       </main>
-    </div>
+    </AuthShell>
   );
 }
 

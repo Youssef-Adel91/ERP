@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/use-app-store";
 import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
@@ -100,7 +101,7 @@ export default function RegisterPage() {
         name: res.full_name,
         email: res.email,
         role: "OWNER",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=00288E&color=fff`,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=2540F0&color=fff`,
       });
 
       router.push("/onboarding/systems");
@@ -114,13 +115,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div
-      className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "none",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[500px] animate-in fade-in duration-700 slide-in-from-bottom-4">
 
         {/* Logo & Header */}
@@ -350,6 +345,6 @@ export default function RegisterPage() {
           ))}
         </div>
       </main>
-    </div>
+    </AuthShell>
   );
 }

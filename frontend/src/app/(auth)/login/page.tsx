@@ -10,6 +10,7 @@ import { useAppStore } from "@/store/use-app-store";
 import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 
 const loginSchema = z.object({
   identifier: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صحيح" }),
@@ -73,7 +74,7 @@ export default function LoginPage() {
         name: me.full_name,
         email: me.email,
         role: me.role,
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(me.full_name)}&background=00288E&color=fff`,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(me.full_name)}&background=2540F0&color=fff`,
       });
 
       router.push("/dashboard");
@@ -90,16 +91,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "none",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[440px] animate-in fade-in duration-700 slide-in-from-bottom-4">
         {/* Logo & Header */}
         <div className="text-center mb-10">
-          <div className="flex justify-center items-center gap-3 mb-4">
+          <div className="flex justify-center items-center gap-3 mb-4 lg:hidden">
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-overlay">
               {/* Material Symbol: hub */}
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-7 h-7 fill-white">
@@ -144,7 +140,7 @@ export default function LoginPage() {
                     ? "border-error focus:border-error ring-1 ring-error"
                     : "border-outline-variant"
                 }`}
-                placeholder="example@nexus-erp.com"
+                placeholder="example@trustcore.app"
                 dir="ltr"
               />
               {form.formState.errors.identifier && (
@@ -287,7 +283,7 @@ export default function LoginPage() {
               <span className="text-outline-variant">|</span>
               <a href="#" className="hover:text-primary transition-colors">شروط الاستخدام</a>
               <span className="text-outline-variant">|</span>
-              <a href="mailto:youssefffadel555@gmail.com?subject=Nexus%20ERP%20Support" className="hover:text-primary transition-colors">الدعم الفني</a>
+              <a href="mailto:youssefffadel555@gmail.com?subject=Trust%20Core%20Support" className="hover:text-primary transition-colors">الدعم الفني</a>
             </div>
           </div>
         </footer>
@@ -298,6 +294,6 @@ export default function LoginPage() {
           transform: scaleX(-1);
         }
       `}</style>
-    </div>
+    </AuthShell>
   );
 }

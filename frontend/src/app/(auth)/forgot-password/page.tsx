@@ -8,6 +8,7 @@ import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صحيح" }),
@@ -46,13 +47,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div
-      className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "none",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[440px] animate-in fade-in duration-700 slide-in-from-bottom-4">
         {/* Logo & Header */}
         <div className="text-center mb-10">
@@ -162,6 +157,6 @@ export default function ForgotPasswordPage() {
           )}
         </div>
       </main>
-    </div>
+    </AuthShell>
   );
 }
