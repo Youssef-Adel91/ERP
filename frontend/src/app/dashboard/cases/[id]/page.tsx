@@ -657,7 +657,7 @@ function ObjectArrayField({
 
       {fields.length === 0 ? (
         <p className="text-body-sm text-on-surface-variant bg-surface-variant/10 rounded-lg p-3 text-center">
-          لا توجد عناصر بعد. اضغط "إضافة صف" للبدء.
+          لا توجد عناصر بعد. اضغط &quot;إضافة صف&quot; للبدء.
         </p>
       ) : (
         <div className="space-y-2">
@@ -760,7 +760,7 @@ function RateLookupPanel({
   return (
     <div className="rounded-lg border border-primary/30 bg-primary-container/5 p-2 space-y-1.5">
       <div className="flex items-center gap-1.5 text-[12px] font-semibold text-primary">
-        <Sparkles className="w-3.5 h-3.5" /> أسعار الموردين المتاحة لـ "{debouncedServiceType}"
+        <Sparkles className="w-3.5 h-3.5" /> أسعار الموردين المتاحة لـ &quot;{debouncedServiceType}&quot;
       </div>
       {isFetching ? (
         <div className="flex items-center gap-2 text-body-sm text-on-surface-variant py-1">

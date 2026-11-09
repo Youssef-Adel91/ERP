@@ -375,7 +375,7 @@ function MatchingPanel({ jobOrder, onClose }: { jobOrder: JobOrder; onClose: () 
           </div>
         ) : !data || data.candidates.length === 0 ? (
           <p className="text-body-sm text-on-surface-variant py-6 text-center">
-            لا يوجد مرشحون غير مرتبطين مطابقون للمهنة "{jobOrder.required_profession}" حاليًا.
+            لا يوجد مرشحون غير مرتبطين مطابقون للمهنة &quot;{jobOrder.required_profession}&quot; حاليًا.
           </p>
         ) : (
           <div className="space-y-2">

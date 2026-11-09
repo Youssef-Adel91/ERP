@@ -283,7 +283,7 @@ export default function LandingPage() {
                 إيه المنتج الأكتر مبيعاً الشهر ده؟
               </div>
               <div className="bg-yellow-400 rounded-2xl rounded-tr-none p-3 text-on-surface font-medium max-w-xs mr-auto text-left" dir="rtl">
-                🏆 المنتج الأعلى مبيعاً هو <strong>"كابل USB-C"</strong> بـ 1,240 وحدة — زيادة 18% عن الشهر اللي فات.
+                🏆 المنتج الأعلى مبيعاً هو <strong>&quot;كابل USB-C&quot;</strong> بـ 1,240 وحدة — زيادة 18% عن الشهر اللي فات.
               </div>
               <div className="bg-white/10 rounded-2xl rounded-tl-none p-3 text-white/90 max-w-xs">
                 وإيه توقعك للشهر الجاي؟
@@ -323,7 +323,7 @@ export default function LandingPage() {
                     <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                   ))}
                 </div>
-                <p className="text-on-surface-variant leading-relaxed mb-6 text-sm">"{t.text}"</p>
+                <p className="text-on-surface-variant leading-relaxed mb-6 text-sm">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-[#7c3aed] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                     {t.name[0]}
