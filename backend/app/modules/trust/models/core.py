@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from pydantic import NaiveDatetime
 from sqlalchemy import Column, Numeric
 from sqlmodel import Field, SQLModel
 
@@ -59,7 +60,7 @@ class GlobalReputation(SQLModel, table=True):
     # offset-naive and offset-aware datetimes" (a live 500 discovered while
     # verifying Phase F). Stored values are still real UTC instants; only
     # the tzinfo marker is dropped to match what the column can hold.
-    updated_at: datetime = Field(
+    updated_at: NaiveDatetime = Field(
         default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
         sa_column_kwargs={"onupdate": lambda: datetime.now(UTC).replace(tzinfo=None)}
     )
@@ -93,4 +94,4 @@ class TrustContribution(SQLModel, table=True):
     # GlobalReputation.updated_at above — this is also what
     # check_reciprocity_gate (app.modules.trust.services.gates) compares
     # against, so both sides must agree on naive UTC.
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
+    created_at: NaiveDatetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
