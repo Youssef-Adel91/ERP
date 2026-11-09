@@ -57,6 +57,11 @@ _COL_ALIASES: dict[str, str] = {
     "سنوات الخبرة": "years_of_experience",
 }
 
+_CANONICAL_FIELDS = {
+    "full_name", "full_name_ar", "passport_number", "passport_expiry", "profession",
+    "profession_ar", "target_country", "nationality", "date_of_birth", "years_of_experience",
+}
+
 _REQUIRED_FIELDS = {"full_name", "passport_number", "profession", "target_country", "nationality"}
 
 
@@ -81,7 +86,14 @@ def _normalise_headers(raw_headers: list[str]) -> dict[int, str]:
     """Maps Excel column indices to normalised field names."""
     mapping: dict[int, str] = {}
     for idx, h in enumerate(raw_headers):
-        normalised = _COL_ALIASES.get(h.strip().lower())
+        key = h.strip().lower()
+        # Accept the documented canonical names (full_name, passport_number, ...)
+        # and underscore/space variants in addition to the display aliases.
+        normalised = (
+            _COL_ALIASES.get(key)
+            or _COL_ALIASES.get(key.replace("_", " "))
+            or (key if key in _CANONICAL_FIELDS else None)
+        )
         if normalised:
             mapping[idx] = normalised
     return mapping
