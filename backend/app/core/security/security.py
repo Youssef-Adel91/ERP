@@ -18,7 +18,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from fastapi import HTTPException, Request
 from fastapi import status as http_status
-from jose import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
@@ -73,6 +73,7 @@ def create_access_token(
         "sub": str(user_id),
         "tenant_id": tenant_id,
         "roles": roles,
+        "type": "access",
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
     }
@@ -88,6 +89,12 @@ def decode_token(token: str) -> TokenPayload:
         jose.JWTError — if token is invalid, expired, or tampered with.
     """
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    # Portal (customer) tokens are signed with the same key. They must never
+    # be accepted as staff access tokens — otherwise a portal customer could
+    # reach any tenant endpoint that has no explicit CurrentUser/role check.
+    # Tokens issued before the "type" claim existed have none and stay valid.
+    if payload.get("type", "access") != "access":
+        raise JWTError("Token type is not an access token.")
     return TokenPayload(
         sub=payload["sub"],
         tenant_id=payload["tenant_id"],

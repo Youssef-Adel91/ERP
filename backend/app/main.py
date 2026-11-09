@@ -164,9 +164,9 @@ def create_application() -> FastAPI:
             "- **Event-driven**: Inventory ↔ Accounting decoupled via EventBus\n"
             "- **Neo4j-ready**: Contact models annotated for graph extraction\n"
         ),
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        openapi_url=None if settings.is_production else f"{settings.API_V1_PREFIX}/openapi.json",
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
         default_response_class=ORJSONResponse,
         lifespan=lifespan,
     )
