@@ -662,6 +662,30 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
 
     try:
         _shared_metadata = tenant_tables[0].metadata
+
+        # Many tenant models declare their enum with create_type=False (the
+        # alembic chain used to create the types). create_all() therefore
+        # never emits CREATE TYPE, and the first table that references one
+        # fails with `type "<schema>.documentstate" does not exist`. Create
+        # every enum type up front, idempotently, in the tenant schema.
+        from sqlalchemy import Enum as _SAEnum
+
+        _enum_ddl: dict[str, str] = {}
+        for _tbl in tenant_tables:
+            for _col in _tbl.columns:
+                _t = _col.type
+                if isinstance(_t, _SAEnum) and _t.name and _t.name not in _enum_ddl:
+                    _labels = ", ".join(
+                        "'" + str(_v).replace("'", "''") + "'" for _v in _t.enums
+                    )
+                    _enum_ddl[_t.name] = (
+                        f'DO $$ BEGIN CREATE TYPE "{schema}"."{_t.name}" AS ENUM ({_labels}); '
+                        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+                    )
+        with _sync_engine.begin() as _conn:
+            for _ddl in _enum_ddl.values():
+                _conn.exec_driver_sql(_ddl.replace("%", "%%"))
+
         _shared_metadata.create_all(_sync_engine, tables=tenant_tables, checkfirst=True)
         logger.info("✅ Tenant schema '%s' tables created via create_all.", schema)
     finally:
