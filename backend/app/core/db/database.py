@@ -451,6 +451,14 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     )
     from app.modules.purchasing.models.payments import SupplierPayment, PaymentAllocation
     from app.modules.pos.models import CashShift, PosSale
+    from app.modules.core.models import (
+        Branch, Attachment, DocumentSequence, AuditLog, ProcessedEvent,
+    )
+    from app.modules.eta.models.receipts import EtaReceiptBatch, EtaReceipt
+    from app.modules.hr.models.core import LeaveRequest
+    from app.modules.inventory.models.stock import ProductBatch
+    from app.core.observability.models import ReconciliationRun
+    from app.modules.sales.models.payments import SalesPayment, SalesPaymentAllocation
 
     schema = schema_for(tenant_id)
 
@@ -590,6 +598,20 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         EtaSubmission.__table__,
         # AI Drafts
         AIDraftedMessage.__table__,
+        # Previously missing from provisioning (found in live testing: POST
+        # /sales/payments 500'd with "relation sales_payments does not exist").
+        Branch.__table__,
+        Attachment.__table__,
+        DocumentSequence.__table__,
+        AuditLog.__table__,
+        ProcessedEvent.__table__,
+        EtaReceiptBatch.__table__,
+        EtaReceipt.__table__,
+        LeaveRequest.__table__,          # FK -> hr_employees (listed earlier)
+        ProductBatch.__table__,
+        ReconciliationRun.__table__,
+        SalesPayment.__table__,          # FK -> none
+        SalesPaymentAllocation.__table__,  # FK -> sales_payments, sales_invoices
     ]
 
     # ── Step 1 & 2: Create schema + tables ────────────────────────────────────
