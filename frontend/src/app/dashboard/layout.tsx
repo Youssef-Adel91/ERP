@@ -42,6 +42,9 @@ import {
   AlertTriangle,
   ShieldAlert,
   Sparkles,
+  Sun,
+  Moon,
+  ChevronLeft,
 } from "lucide-react";
 
 interface NavItem {
@@ -215,6 +218,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     [enabledPluginKeys]
   );
 
+  // Light / dark theme toggle — persisted in localStorage, applied via the `dark` class on <html>.
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains("dark"));
+  }, []);
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    try {
+      localStorage.setItem("trustcore-theme", next ? "dark" : "light");
+    } catch {}
+  };
+
+  // Breadcrumb: current section label / current page label
+  const currentCrumb = useMemo(() => {
+    for (const section of navSections) {
+      for (const item of section.items) {
+        const hit = item.href === "/dashboard" ? pathname === item.href : pathname?.startsWith(item.href);
+        if (hit) return { section: section.label, page: item.label };
+      }
+    }
+    return { section: null as string | null, page: "لوحة القيادة" };
+  }, [pathname]);
+
   const handleLogout = () => {
     clearSessionStorage();
     clearSession();
@@ -223,82 +251,84 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-surface" dir="rtl">
-      {/* ── Top Nav Bar ─────────────────────────────────────────── */}
-      <header className="bg-surface-container-lowest shadow-sm fixed top-0 left-0 right-0 z-50 w-full h-16 flex flex-row-reverse justify-between items-center px-gutter border-b border-outline-variant">
-        {/* Right: Logo + Nav links (desktop) */}
-        <div className="flex items-center gap-4 flex-row-reverse">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-              {/* hub icon */}
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-5 h-5 fill-white">
-                <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
-              </svg>
-            </div>
-            <span className="font-headline-md text-headline-md font-bold text-primary hidden sm:inline">
-              Nexus ERP
-            </span>
-          </Link>
-
-          {/* Desktop Nav links */}
-          <nav className="hidden md:flex gap-1 mr-4 flex-row-reverse">
-            {[
-              { href: "/dashboard", label: "الرئيسية" },
-              { href: "/dashboard/accounting", label: "العمليات" },
-              { href: "/dashboard/contacts", label: "الشركاء" },
-            ].map((link) => {
-              const active = link.href === "/dashboard" ? pathname === link.href : pathname?.startsWith(link.href);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`px-3 py-1.5 rounded text-body-md font-medium transition-colors duration-200 ${
-                    active
-                      ? "text-primary font-bold border-b-2 border-primary"
-                      : "text-on-surface-variant hover:bg-surface-container-low"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
+      {/* ── Top Bar ─────────────────────────────────────────────── */}
+      <header className="fixed top-0 left-0 right-0 md:right-[272px] z-30 h-[72px] flex flex-row-reverse justify-between items-center px-6 bg-surface-container-lowest border-b border-outline-variant">
+        {/* Right: hamburger (mobile) + breadcrumb */}
+        <div className="flex items-center gap-3 flex-row-reverse min-w-0">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="فتح القائمة"
+            className="p-2 rounded-md hover:bg-surface-container-low transition-colors text-on-surface-variant md:hidden"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <nav aria-label="مسار الصفحة" className="flex items-center gap-2 text-body-md min-w-0">
+            <span className="text-outline hidden sm:inline">Trust Core</span>
+            {currentCrumb.section && (
+              <>
+                <ChevronLeft className="w-4 h-4 text-outline hidden sm:inline rotate-180" />
+                <span className="text-outline hidden sm:inline">{currentCrumb.section}</span>
+              </>
+            )}
+            <ChevronLeft className="w-4 h-4 text-outline rotate-180 hidden sm:inline" />
+            <span className="font-semibold text-on-surface truncate">{currentCrumb.page}</span>
           </nav>
         </div>
 
-        {/* Left: Search + actions + avatar */}
+        {/* Left: search + AI + actions + user */}
         <div className="flex items-center gap-2">
-          {/* Search bar (desktop) */}
-          <div className="relative hidden sm:block">
+          <div className="relative hidden lg:block">
             <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-outline" />
             <input
               type="text"
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              className="pr-9 pl-4 py-1.5 bg-surface-container-low border border-outline-variant rounded-full text-body-md w-56 focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="بحث في النظام..."
+              className="pr-9 pl-12 h-10 bg-surface-container-low border border-transparent rounded-md text-body-md w-72 placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:border-primary"
+              placeholder="ابحث عن فاتورة، عميل، منتج..."
             />
+            <kbd className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-mono px-1.5 py-0.5 rounded border border-outline-variant bg-surface-container-lowest text-outline" dir="ltr">
+              Ctrl K
+            </kbd>
           </div>
 
+          <Link
+            href="/dashboard/insights"
+            className="hidden sm:inline-flex items-center gap-1.5 h-10 px-3 rounded-md bg-primary-fixed text-primary font-semibold text-body-md hover:opacity-90 transition-opacity"
+          >
+            <Sparkles className="w-4 h-4" />
+            اسأل Trust AI
+          </Link>
+
           <div className="flex items-center gap-1">
-            {/* Notification bell — shows expiring passports/visas/documents,
-                reusing the same query as ExpirationAlertsWidget on the dashboard. */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={isDark ? "الوضع الفاتح" : "الوضع الداكن"}
+              className="p-2 rounded-md hover:bg-surface-container-low transition-colors text-on-surface-variant"
+            >
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
+            {/* Notification bell — expiring passports/visas/documents (same query as ExpirationAlertsWidget). */}
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
                 onClick={() => setNotifOpen((v) => !v)}
                 aria-label="التنبيهات"
                 aria-expanded={notifOpen}
-                className="relative p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant"
+                className="relative p-2 rounded-md hover:bg-surface-container-low transition-colors text-on-surface-variant"
               >
                 <Bell className="w-5 h-5" />
                 {!alertsLoading && alerts && alerts.length > 0 && (
-                  <span className="absolute top-1 left-1 min-w-[16px] h-4 px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                  <span className="absolute top-0.5 left-0.5 min-w-[16px] h-4 px-1 rounded-full bg-error text-on-error text-[10px] font-bold flex items-center justify-center leading-none">
                     {alerts.length > 9 ? "9+" : alerts.length}
                   </span>
                 )}
               </button>
 
               {notifOpen && (
-                <div className="absolute left-0 mt-2 w-80 max-h-96 overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-xl shadow-overlay z-50 text-right">
+                <div className="absolute left-0 mt-2 w-80 max-h-96 overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-lg shadow-overlay z-50 text-right">
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-outline-variant">
                     <ShieldAlert className="w-4 h-4 text-warning" />
                     <h3 className="font-headline-sm text-body-md font-bold text-on-surface">تنبيهات انتهاء الصلاحية</h3>
@@ -338,16 +368,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
             </div>
-            <button className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant">
-              <Settings className="w-5 h-5" />
-            </button>
+
             <a
-              href="mailto:youssefffadel555@gmail.com?subject=Nexus%20ERP%20Support"
-              className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant"
+              href="mailto:youssefffadel555@gmail.com?subject=Trust%20Core%20Support"
+              className="p-2 rounded-md hover:bg-surface-container-low transition-colors text-on-surface-variant"
               title="الدعم الفني"
             >
               <HelpCircle className="w-5 h-5" />
             </a>
+
             {/* Avatar + dropdown menu */}
             <div className="relative mr-1" ref={profileRef}>
               <button
@@ -356,21 +385,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 aria-label="قائمة الحساب"
                 aria-haspopup="menu"
                 aria-expanded={profileOpen}
-                className="h-8 w-8 rounded-full bg-primary-fixed border border-outline-variant flex items-center justify-center font-bold text-on-primary-fixed text-body-sm overflow-hidden shrink-0"
+                className="flex flex-row-reverse items-center gap-2 h-10 pl-2 pr-1 rounded-md hover:bg-surface-container-low transition-colors"
               >
-                {user?.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.avatar} alt={user?.name ?? ""} className="w-full h-full object-cover" />
-                ) : (
-                  user?.name?.[0] ?? "?"
-                )}
+                <span className="h-8 w-8 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary text-body-sm overflow-hidden shrink-0">
+                  {user?.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={user.avatar} alt={user?.name ?? ""} className="w-full h-full object-cover" />
+                  ) : (
+                    user?.name?.[0] ?? "؟"
+                  )}
+                </span>
+                <span className="hidden sm:inline text-body-md font-medium text-on-surface">{user?.name}</span>
               </button>
 
               {profileOpen && (
                 <div
                   role="menu"
                   aria-label="قائمة الحساب"
-                  className="absolute left-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-overlay z-50 text-right overflow-hidden"
+                  className="absolute left-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-overlay z-50 text-right overflow-hidden"
                 >
                   {user && (
                     <div className="px-4 py-3 border-b border-outline-variant">
@@ -385,7 +417,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       setProfileOpen(false);
                       handleLogout();
                     }}
-                    className="flex flex-row-reverse w-full items-center gap-2 px-4 py-2.5 text-error hover:bg-error-container/20 transition-all text-body-md"
+                    className="flex flex-row-reverse w-full items-center gap-2 px-4 py-2.5 text-error hover:bg-error-container transition-all text-body-md"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>تسجيل الخروج</span>
@@ -394,16 +426,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </div>
           </div>
-
-          {/* Mobile hamburger */}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="فتح القائمة"
-            className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant md:hidden"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
         </div>
       </header>
 
@@ -411,73 +433,63 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
           aria-hidden="true"
         />
       )}
 
-      {/* ── Side Nav Bar ─────────────────────────────────────────── */}
+      {/* ── Sidebar (navy, full height, right) ───────────────────── */}
       <aside
-        className={`fixed right-0 top-16 h-[calc(100vh-64px)] w-64 bg-white border-l border-outline-variant shadow-md flex flex-col z-40 text-right transition-transform duration-200 ease-out ${
+        className={`fixed right-0 top-0 h-screen w-[272px] bg-sidebar text-sidebar-text flex flex-col z-50 text-right transition-transform duration-200 ease-out ${
           sidebarOpen ? "translate-x-0" : "translate-x-full"
         } md:translate-x-0`}
       >
-        {/* Mobile close button */}
-        <div className="flex items-center justify-between px-card-padding pt-3 md:hidden">
-          <span className="font-headline-sm text-body-md font-bold text-primary">القائمة</span>
+        {/* Logo block */}
+        <div className="h-[72px] shrink-0 flex flex-row-reverse items-center justify-between px-5 border-b border-sidebar-border">
+          <Link href="/dashboard" className="flex flex-row-reverse items-center gap-3">
+            <div className="w-10 h-10 rounded-md bg-primary flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-on-primary" />
+            </div>
+            <div className="text-right leading-tight">
+              <p className="text-[17px] font-bold text-sidebar-on">Trust Core</p>
+              <p className="text-[11px] text-sidebar-text">المرجع الرقمي للتاجر المصري</p>
+            </div>
+          </Link>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
             aria-label="إغلاق القائمة"
-            className="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant"
+            className="p-2 rounded-md hover:bg-sidebar-hover text-sidebar-text md:hidden"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Sidebar header block */}
-        <div className="px-card-padding pt-4 pb-2 hidden md:block">
-          <div className="flex flex-row-reverse items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center">
-              {/* analytics icon */}
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-5 h-5 fill-white">
-                <path d="M280-280h80v-280h-80v280Zm160 0h80v-400h-80v400Zm160 0h80v-160h-80v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Z"/>
-              </svg>
-            </div>
-            <div>
-              <h2 className="font-headline-sm text-headline-sm text-primary font-bold">نظام نكسوس</h2>
-              <p className="text-body-sm text-outline">تحليلات الشركات</p>
-            </div>
-          </div>
-        </div>
-
         {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
           {visibleNavSections.map((section, si) => (
-            <div key={si} className="mb-2">
+            <div key={si} className="mb-3">
               {section.label && (
-                <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-outline">
+                <p className="px-3 pt-2 pb-1.5 text-[11px] font-semibold tracking-wide text-sidebar-text/70">
                   {section.label}
                 </p>
               )}
               {section.items.map((item) => {
                 const active =
-                  item.href === "/dashboard"
-                    ? pathname === item.href
-                    : pathname?.startsWith(item.href);
+                  item.href === "/dashboard" ? pathname === item.href : pathname?.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     onClick={() => setSidebarOpen(false)}
-                    className={`flex flex-row-reverse items-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-100 text-body-md ${
+                    className={`flex flex-row-reverse items-center gap-3 px-3 h-11 rounded-md transition-colors text-body-md ${
                       active
-                        ? "bg-secondary-container/40 text-on-secondary-container border-r-4 border-primary font-semibold"
-                        : "text-on-surface-variant hover:bg-surface-container-high active:scale-95"
+                        ? "bg-sidebar-active text-sidebar-on font-semibold"
+                        : "text-sidebar-text hover:bg-sidebar-hover hover:text-sidebar-on"
                     }`}
                   >
-                    <item.icon className="w-4.5 h-4.5 shrink-0 w-5 h-5" />
-                    <span>{item.label}</span>
+                    <item.icon className="w-5 h-5 shrink-0" />
+                    <span className="flex-1 text-right">{item.label}</span>
                   </Link>
                 );
               })}
@@ -485,38 +497,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
 
-        {/* Bottom: user info + logout */}
-        <div className="border-t border-outline-variant p-card-padding shrink-0">
-          {user && (
-            <div className="flex flex-row-reverse items-center gap-2 mb-3 px-1">
-              <div className="w-8 h-8 rounded-full bg-primary-fixed border border-outline-variant overflow-hidden shrink-0">
-                {user.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="w-full h-full flex items-center justify-center font-bold text-on-primary-fixed text-body-sm">
-                    {user.name?.[0] ?? "؟"}
-                  </span>
-                )}
-              </div>
-              <div className="text-right min-w-0">
-                <p className="font-body-md text-body-md font-semibold text-on-surface truncate">{user.name}</p>
-                <p className="font-body-sm text-body-sm text-outline truncate">{user.role}</p>
-              </div>
+        {/* Bottom: user card */}
+        <div className="shrink-0 p-3">
+          <div className="flex flex-row-reverse items-center gap-3 p-3 rounded-md bg-sidebar-hover">
+            <div className="w-9 h-9 rounded-full bg-primary-fixed overflow-hidden shrink-0 flex items-center justify-center">
+              {user?.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-bold text-primary text-body-sm">{user?.name?.[0] ?? "؟"}</span>
+              )}
             </div>
-          )}
-          <button
-            onClick={handleLogout}
-            className="flex flex-row-reverse w-full items-center gap-2 px-3 py-2.5 rounded-lg text-error hover:bg-error-container/20 transition-all text-body-md"
-          >
-            <LogOut className="w-5 h-5" />
-            <span>تسجيل الخروج</span>
-          </button>
+            <div className="text-right min-w-0 flex-1">
+              <p className="text-body-md font-semibold text-sidebar-on truncate">{user?.name}</p>
+              <p className="text-[11px] text-sidebar-text truncate">{user?.role}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              aria-label="تسجيل الخروج"
+              title="تسجيل الخروج"
+              className="p-1.5 rounded-md text-sidebar-text hover:text-sidebar-on hover:bg-sidebar-active transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* ── Main Content ─────────────────────────────────────────── */}
-      <main className="md:mr-64 mt-16 p-gutter min-h-[calc(100vh-64px)]">
+      <main className="md:mr-[272px] mt-[72px] p-6 lg:p-8 min-h-[calc(100vh-72px)]">
         {children}
       </main>
     </div>

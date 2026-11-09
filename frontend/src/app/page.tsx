@@ -56,7 +56,7 @@ const aiFeatures = [
 ];
 
 const testimonials = [
-  { name: "أحمد الشناوي", role: "مدير مالي تنفيذي", company: "شركة النصر للتجارة", text: "وفّرنا 40% من وقت الفريق المالي بعد ما طبّقنا Nexus ERP. الفواتير الإلكترونية بقت تتعمل تلقائي بالكامل.", rating: 5 },
+  { name: "أحمد الشناوي", role: "مدير مالي تنفيذي", company: "شركة النصر للتجارة", text: "وفّرنا 40% من وقت الفريق المالي بعد ما طبّقنا Trust Core. الفواتير الإلكترونية بقت تتعمل تلقائي بالكامل.", rating: 5 },
   { name: "منى إبراهيم",  role: "مديرة العمليات",   company: "مجموعة الدلتا للمقاولات", text: "الداشبورد بيدّيني نظرة كاملة على كل الفروع في ثواني. ما كانتش عندنا رؤية كده قبل كده.", rating: 5 },
   { name: "خالد محمود",   role: "صاحب مشروع",       company: "متاجر الحرية - 12 فرع", text: "بدأت بفرع واحد وعدّيت على 12 فرع من غير ما أحتاج أشتري سوفت وير جديد. الـ pricing عادل جداً.", rating: 5 },
 ];
@@ -81,25 +81,25 @@ function Navbar() {
     <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100" : "bg-transparent"}`}>
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between" dir="rtl">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-[#00288e] rounded-xl flex items-center justify-center shadow">
+          <div className="w-9 h-9 bg-[#2540f0] rounded-xl flex items-center justify-center shadow">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-5 h-5 fill-white">
               <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
             </svg>
           </div>
-          <span className={`font-bold text-lg tracking-tight ${scrolled ? "text-[#00288e]" : "text-white"}`}>Nexus ERP</span>
+          <span className={`font-bold text-lg tracking-tight ${scrolled ? "text-[#2540f0]" : "text-white"}`}>Trust Core</span>
         </Link>
 
         <nav className={`hidden md:flex items-center gap-6 text-sm font-medium ${scrolled ? "text-gray-600" : "text-white/90"}`}>
           {[["الوحدات","#modules"],["الذكاء الاصطناعي","#ai"],["آراء العملاء","#testimonials"],["الأسعار","#pricing"]].map(([label, href]) => (
-            <a key={href} href={href} className="hover:text-[#00288e] transition-colors">{label}</a>
+            <a key={href} href={href} className="hover:text-[#2540f0] transition-colors">{label}</a>
           ))}
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link href="/login" className={`hidden sm:block text-sm font-semibold px-4 py-1.5 rounded-lg transition-all ${scrolled ? "text-[#00288e] hover:bg-blue-50" : "text-white hover:bg-white/10"}`}>
+          <Link href="/login" className={`hidden sm:block text-sm font-semibold px-4 py-1.5 rounded-lg transition-all ${scrolled ? "text-[#2540f0] hover:bg-blue-50" : "text-white hover:bg-white/10"}`}>
             تسجيل الدخول
           </Link>
-          <Link href="/register" className="bg-[#00288e] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[#001f6e] transition-all shadow hover:shadow-md active:scale-95">
+          <Link href="/register" className="bg-[#2540f0] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[#1d31c8] transition-all shadow hover:shadow-md active:scale-95">
             ابدأ مجاناً ←
           </Link>
         </div>
@@ -117,7 +117,7 @@ export default function LandingPage() {
       {/* ── HERO ───────────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center justify-center text-center overflow-hidden">
         {/* Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#00288e] via-[#0a1f6b] to-[#440098]" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#2540f0] via-[#1d31c8] to-[#7c3aed]" />
         {/* Grid overlay */}
         <div className="absolute inset-0 opacity-10"
           style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.1) 1px,transparent 1px)", backgroundSize: "60px 60px" }} />
@@ -148,7 +148,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
             <Link href="/register"
-              className="bg-white text-[#00288e] font-black text-lg px-10 py-4 rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2">
+              className="bg-white text-[#2540f0] font-black text-lg px-10 py-4 rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2">
               ابدأ مجاناً الآن
               <ArrowLeft className="w-5 h-5" />
             </Link>
@@ -185,12 +185,12 @@ export default function LandingPage() {
       <section id="modules" className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 bg-blue-50 text-[#00288e] px-4 py-1.5 rounded-full text-sm font-bold mb-4">
+            <div className="inline-flex items-center gap-2 bg-blue-50 text-[#2540f0] px-4 py-1.5 rounded-full text-sm font-bold mb-4">
               <Store className="w-4 h-4" />
               Marketplace الأنظمة
             </div>
             <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
-              كل اللي محتاجه <span className="text-[#00288e]">في مكان واحد</span>
+              كل اللي محتاجه <span className="text-[#2540f0]">في مكان واحد</span>
             </h2>
             <p className="text-xl text-gray-500 max-w-2xl mx-auto">
               اشترك في الأنظمة اللي تحتاجها بس — وزود لما تكبر. بدون تعقيدات.
@@ -207,13 +207,13 @@ export default function LandingPage() {
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-bold text-gray-900 text-base leading-tight">{mod.title}</h3>
                   {mod.badge && (
-                    <span className="text-[10px] font-bold bg-[#00288e]/10 text-[#00288e] px-2 py-0.5 rounded-full whitespace-nowrap mr-1">
+                    <span className="text-[10px] font-bold bg-[#2540f0]/10 text-[#2540f0] px-2 py-0.5 rounded-full whitespace-nowrap mr-1">
                       {mod.badge}
                     </span>
                   )}
                 </div>
                 <p className="text-sm text-gray-500 leading-relaxed">{mod.desc}</p>
-                <div className="mt-4 flex items-center gap-1 text-[#00288e] text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="mt-4 flex items-center gap-1 text-[#2540f0] text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
                   <span>اعرف أكتر</span>
                   <ArrowLeft className="w-3.5 h-3.5" />
                 </div>
@@ -223,7 +223,7 @@ export default function LandingPage() {
 
           <div className="text-center mt-12">
             <Link href="/register"
-              className="inline-flex items-center gap-2 bg-[#00288e] text-white font-bold text-lg px-10 py-4 rounded-xl hover:bg-[#001f6e] transition-all shadow-lg hover:shadow-xl active:scale-95">
+              className="inline-flex items-center gap-2 bg-[#2540f0] text-white font-bold text-lg px-10 py-4 rounded-xl hover:bg-[#1d31c8] transition-all shadow-lg hover:shadow-xl active:scale-95">
               ابدأ تجربتك المجانية
               <ArrowLeft className="w-5 h-5" />
             </Link>
@@ -233,7 +233,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── AI SECTION ──────────────────────────────────────────────────────── */}
-      <section id="ai" className="py-24 bg-gradient-to-br from-[#00288e] to-[#440098] overflow-hidden relative">
+      <section id="ai" className="py-24 bg-gradient-to-br from-[#2540f0] to-[#7c3aed] overflow-hidden relative">
         <div className="absolute inset-0 opacity-5"
           style={{ backgroundImage: "radial-gradient(circle at 2px 2px, white 1px, transparent 0)", backgroundSize: "40px 40px" }} />
 
@@ -311,7 +311,7 @@ export default function LandingPage() {
             <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
               بيقولوا عنّا إيه؟
             </h2>
-            <p className="text-xl text-gray-500">آراء من شركات مصرية فعلاً بتستخدم Nexus ERP</p>
+            <p className="text-xl text-gray-500">آراء من شركات مصرية فعلاً بتستخدم Trust Core</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -324,7 +324,7 @@ export default function LandingPage() {
                 </div>
                 <p className="text-gray-700 leading-relaxed mb-6 text-sm">"{t.text}"</p>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00288e] to-[#440098] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#2540f0] to-[#7c3aed] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                     {t.name[0]}
                   </div>
                   <div>
@@ -341,13 +341,13 @@ export default function LandingPage() {
       {/* ── PRICING TEASER ──────────────────────────────────────────────────── */}
       <section id="pricing" className="py-24 bg-gray-50">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <div className="inline-flex items-center gap-2 bg-blue-50 text-[#00288e] px-4 py-1.5 rounded-full text-sm font-bold mb-6">
+          <div className="inline-flex items-center gap-2 bg-blue-50 text-[#2540f0] px-4 py-1.5 rounded-full text-sm font-bold mb-6">
             <CreditCard className="w-4 h-4" />
             التسعير
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
             ابدأ مجاناً —
-            <span className="text-[#00288e]"> ادفع لما تكبر</span>
+            <span className="text-[#2540f0]"> ادفع لما تكبر</span>
           </h2>
           <p className="text-xl text-gray-500 mb-12 max-w-2xl mx-auto">
             مفيش رسوم أولية. تدفع حسب الوحدات اللي بتستخدمها فعلاً. اشتراك شهري بسيط يبدأ من 299 ج.م / شهر.
@@ -360,7 +360,7 @@ export default function LandingPage() {
               { name: "Enterprise", price: "مخصص", desc: "للمجموعات والشركات الكبرى", features: ["مستخدمين غير محدودين", "فروع غير محدودة", "تكامل مخصص", "مدير حساب مخصص", "SLA 99.9%"] },
             ].map((plan) => (
               <div key={plan.name}
-                className={`relative rounded-2xl p-6 text-right border ${plan.popular ? "bg-[#00288e] border-transparent shadow-2xl scale-105 text-white" : "bg-white border-gray-100"}`}>
+                className={`relative rounded-2xl p-6 text-right border ${plan.popular ? "bg-[#2540f0] border-transparent shadow-2xl scale-105 text-white" : "bg-white border-gray-100"}`}>
                 {plan.popular && (
                   <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-yellow-400 text-gray-900 text-xs font-black px-4 py-1 rounded-full whitespace-nowrap">
                     ⭐ الأكثر شعبية
@@ -380,7 +380,7 @@ export default function LandingPage() {
                   ))}
                 </ul>
                 <Link href="/register"
-                  className={`block w-full py-3 rounded-xl font-bold text-center transition-all ${plan.popular ? "bg-white text-[#00288e] hover:bg-blue-50" : "bg-[#00288e] text-white hover:bg-[#001f6e]"}`}>
+                  className={`block w-full py-3 rounded-xl font-bold text-center transition-all ${plan.popular ? "bg-white text-[#2540f0] hover:bg-blue-50" : "bg-[#2540f0] text-white hover:bg-[#1d31c8]"}`}>
                   ابدأ الآن
                 </Link>
               </div>
@@ -390,7 +390,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA BANNER ──────────────────────────────────────────────────────── */}
-      <section className="py-20 bg-gradient-to-l from-[#00288e] to-[#440098] relative overflow-hidden">
+      <section className="py-20 bg-gradient-to-l from-[#2540f0] to-[#7c3aed] relative overflow-hidden">
         <div className="absolute inset-0 opacity-10"
           style={{ backgroundImage: "radial-gradient(circle at 2px 2px, white 1px, transparent 0)", backgroundSize: "32px 32px" }} />
         <div className="relative max-w-4xl mx-auto px-6 text-center">
@@ -398,10 +398,10 @@ export default function LandingPage() {
             جاهز تبدأ رحلة الرقمنة؟
           </h2>
           <p className="text-xl text-white/80 mb-10 max-w-xl mx-auto">
-            انضم لأكتر من 1,200 تاجر مصري بيديروا أعمالهم بذكاء مع Nexus ERP.
+            انضم لأكتر من 1,200 تاجر مصري بيديروا أعمالهم بذكاء مع Trust Core.
           </p>
           <Link href="/register"
-            className="inline-flex items-center gap-3 bg-white text-[#00288e] font-black text-xl px-12 py-5 rounded-2xl hover:shadow-2xl hover:scale-105 transition-all duration-200">
+            className="inline-flex items-center gap-3 bg-white text-[#2540f0] font-black text-xl px-12 py-5 rounded-2xl hover:shadow-2xl hover:scale-105 transition-all duration-200">
             أنشئ حسابك المجاني
             <ArrowLeft className="w-6 h-6" />
           </Link>
@@ -415,12 +415,12 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
             <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-[#00288e] rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-[#2540f0] rounded-lg flex items-center justify-center">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-4 h-4 fill-white">
                     <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
                   </svg>
                 </div>
-                <span className="font-bold text-white">Nexus ERP</span>
+                <span className="font-bold text-white">Trust Core</span>
               </div>
               <p className="text-sm leading-relaxed">المرجع الرقمي للتاجر المصري — نظام إدارة متكامل مصنوع للسوق المصري.</p>
             </div>
@@ -442,7 +442,7 @@ export default function LandingPage() {
           </div>
 
           <div className="border-t border-gray-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-sm">© {new Date().getFullYear()} Nexus ERP. جميع الحقوق محفوظة.</p>
+            <p className="text-sm">© {new Date().getFullYear()} Trust Core. جميع الحقوق محفوظة.</p>
             <div className="flex items-center gap-4 text-sm">
               <a href="mailto:youssefffadel555@gmail.com" className="flex items-center gap-1 hover:text-white transition-colors">
                 <Mail className="w-3.5 h-3.5" />

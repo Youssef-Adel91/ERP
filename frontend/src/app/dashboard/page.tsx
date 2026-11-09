@@ -264,7 +264,7 @@ export default function DashboardPage() {
           <button
             onClick={handleExport}
             disabled={!metrics || exporting}
-            className="bg-white border border-outline-variant px-4 py-2 rounded-lg flex items-center gap-2 text-body-md font-medium hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-surface-container-lowest border border-outline-variant px-4 py-2 rounded-lg flex items-center gap-2 text-body-md font-medium hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {exporting ? <Loader2 className="w-4 h-4 text-outline animate-spin" /> : <FileDown className="w-4 h-4 text-outline" />}
             تصدير البيانات
@@ -358,7 +358,7 @@ export default function DashboardPage() {
                 </p>
                 <Link
                   href="/dashboard/eta"
-                  className="bg-white text-primary px-6 py-2 rounded-lg font-bold w-fit hover:bg-opacity-90 transition-all active:scale-95 text-body-md"
+                  className="bg-surface-container-lowest text-primary px-6 py-2 rounded-lg font-bold w-fit hover:bg-opacity-90 transition-all active:scale-95 text-body-md"
                 >
                   استكشف التحديث
                 </Link>
@@ -367,7 +367,7 @@ export default function DashboardPage() {
                 className="absolute inset-0 transition-transform duration-700 group-hover:scale-110"
                 style={{
                   background:
-                    "linear-gradient(135deg, #00288e 0%, #1e40af 40%, #440098 100%)",
+                    "linear-gradient(135deg, #2540f0 0%, #2540f0 40%, #7c3aed 100%)",
                 }}
               />
             </div>
@@ -375,7 +375,7 @@ export default function DashboardPage() {
 
           {/* ── Recent Transactions Table ─────────────────────── */}
           <div className="glass-card rounded-xl shadow-card overflow-hidden">
-            <div className="p-card-padding border-b border-outline-variant flex justify-between items-center bg-white">
+            <div className="p-card-padding border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest">
               <h4 className="font-headline-sm text-headline-sm">آخر المعاملات المالية</h4>
               <Link
                 href="/dashboard/accounting"

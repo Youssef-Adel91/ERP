@@ -3,10 +3,10 @@ import type { LucideIcon } from "lucide-react";
 export type StatCardTone = "primary" | "secondary" | "tertiary" | "error";
 
 const iconToneClasses: Record<StatCardTone, string> = {
-  primary: "bg-primary-container/10 text-primary",
-  secondary: "bg-secondary-container/10 text-secondary",
-  tertiary: "bg-tertiary-container/10 text-tertiary",
-  error: "bg-error-container/10 text-error",
+  primary: "bg-primary-fixed text-primary",
+  secondary: "bg-success-bg text-success",
+  tertiary: "bg-tertiary-fixed text-tertiary",
+  error: "bg-error-container text-error",
 };
 
 /**
@@ -33,15 +33,15 @@ export function StatCard({
   caption?: string;
 }) {
   return (
-    <div className="glass-card p-card-padding rounded-xl shadow-sm hover:shadow-md transition-shadow">
+    <div className="glass-card p-card-padding rounded-lg">
       <div className="flex justify-between items-start mb-4">
-        <div className={`p-2 rounded-lg ${iconToneClasses[tone]}`}>
+        <div className={`p-2.5 rounded-md ${iconToneClasses[tone]}`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
-      <p className="text-body-sm text-outline font-medium">{label}</p>
-      <h3 className="text-headline-md font-headline-md mt-1 text-on-surface" dir="ltr">{value}</h3>
-      {caption && <p className="text-[10px] text-outline-variant mt-2">{caption}</p>}
+      <p className="text-body-sm text-on-surface-variant font-medium">{label}</p>
+      <h3 className="text-[28px] leading-10 font-bold mt-1 text-on-surface" dir="ltr">{value}</h3>
+      {caption && <p className="text-body-sm text-outline mt-2">{caption}</p>}
     </div>
   );
 }

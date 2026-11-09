@@ -28,7 +28,7 @@ export function PortalHeader({ showLogout = true }: { showLogout?: boolean }) {
           </div>
           <div>
             <h1 className="font-headline-sm text-headline-sm text-primary leading-tight">بوابة العملاء</h1>
-            <p className="text-body-sm text-on-surface-variant leading-tight">Nexus ERP</p>
+            <p className="text-body-sm text-on-surface-variant leading-tight">Trust Core</p>
           </div>
         </div>
         {showLogout && (
