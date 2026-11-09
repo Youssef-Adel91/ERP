@@ -221,6 +221,7 @@ async def handle_invoice_created(event: DomainEvent) -> None:
                 invoice_number=invoice_number,
                 amount=amount,
                 currency=payload.get("currency", "EGP"),
+                retry_failed=bool(payload.get("retry_failed")),
             )
             if posting is None:
                 logger.info(

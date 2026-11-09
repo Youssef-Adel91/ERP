@@ -201,6 +201,31 @@ export default function AccountingPage() {
     }
   };
 
+  type FailedPosting = { id: string; entry_kind: string; invoice_number: string | null; amount: number | null; error_message: string | null };
+  const [failedPostings, setFailedPostings] = useState<FailedPosting[]>([]);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  const fetchFailedPostings = useCallback(async () => {
+    try {
+      const res = await apiClient.get<FailedPosting[]>("/accounting/gl-postings/failed");
+      setFailedPostings(res.data);
+    } catch {
+      /* non-critical banner */
+    }
+  }, []);
+
+  const retryPosting = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await apiClient.post(`/accounting/gl-postings/${id}/retry`, {});
+      await Promise.all([fetchFailedPostings(), fetchAll()]);
+    } catch (err) {
+      setError(pickDetail(err as AxiosError<{ detail?: string }>, "تعذر إعادة محاولة الترحيل."));
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -220,7 +245,8 @@ export default function AccountingPage() {
 
   useEffect(() => {
     fetchAll();
-  }, [fetchAll]);
+    fetchFailedPostings();
+  }, [fetchAll, fetchFailedPostings]);
 
   const postEntry = async (id: string) => {
     setPostingId(id);
@@ -237,6 +263,25 @@ export default function AccountingPage() {
 
   return (
     <div className="space-y-gutter">
+      {failedPostings.length > 0 && (
+        <div className="bg-error-container text-on-error-container border border-error rounded-lg p-4 space-y-2">
+          <p className="font-bold text-body-md">{failedPostings.length} قيد تلقائي فشل ترحيله ولم يصل لدفتر الأستاذ</p>
+          <ul className="space-y-1.5">
+            {failedPostings.map((f) => (
+              <li key={f.id} className="flex items-center justify-between gap-3 text-body-sm">
+                <span>{f.invoice_number ?? f.entry_kind}{f.amount != null ? ` — ${f.amount.toLocaleString("ar-EG")} ج.م` : ""}{f.error_message ? ` (${f.error_message})` : ""}</span>
+                <button
+                  onClick={() => retryPosting(f.id)}
+                  disabled={retryingId === f.id}
+                  className="px-3 py-1 rounded-md bg-error text-on-error font-semibold disabled:opacity-60"
+                >
+                  {retryingId === f.id ? "جارٍ المحاولة..." : "إعادة المحاولة"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h1 className="font-headline-lg text-headline-lg text-on-surface mb-1">الحسابات والقيود</h1>
