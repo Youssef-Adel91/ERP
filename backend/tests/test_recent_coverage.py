@@ -400,3 +400,66 @@ async def test_sales_return_cash_refund_gl_flow(db_session: AsyncSession, seed_t
     with pytest.raises(ValueError, match="already been refunded"):
         await refund_sales_return(db_session, return_id=sales_return.id)
 
+
+# ── 7. Travel Agency vs Principal Accounting ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_travel_agency_vs_principal_accounting(monkeypatch):
+    """
+    Verify Travel booking confirmed postings under:
+      - Agent mode: net commission (DR 1200, CR 4010 for 4000) + pass-through (DR 1200, CR 2100 for 16000)
+      - Principal mode: gross revenue (DR 1200, CR 4010 for 20000) + COGS (DR 5010, CR 2100 for 16000)
+    """
+    from app.modules.cases.models.core import Case, CaseType
+    from app.plugins.travel.listeners import _post_confirmed_entries
+
+    published_events = []
+
+    async def fake_publish(event, session=None):
+        published_events.append(event)
+
+    from app.plugins.travel import listeners
+    monkeypatch.setattr(listeners.event_bus, "publish", fake_publish)
+
+    case_data = {
+        "services": [
+            {"service_type": "flight", "buy_price": "16000.00", "sell_price": "20000.00", "quantity": 1}
+        ]
+    }
+
+    # 1. Agent Mode
+    case_agent = Case(id=uuid4(), title="Agent Booking", case_type_id=uuid4(), data=dict(case_data))
+    ct_agent = CaseType(id=uuid4(), name="Travel", slug="travel", meta={"accounting_mode": "agent"})
+    await _post_confirmed_entries(session=None, case=case_agent, ct=ct_agent, tenant_id="tenant-1")
+
+    assert len(published_events) == 2
+    ev1, ev2 = published_events[0], published_events[1]
+    # Entry 1: Commission (margin = 4,000)
+    assert ev1.payload["amount"] == Decimal("4000.00")
+    assert ev1.payload["revenue_account_code"] == "4010"
+    assert ev1.payload["ar_account_code"] == "1200"
+    assert ev1.payload["entry_type"] == "travel_agent_commission"
+    # Entry 2: Pass-through (buy price = 16,000)
+    assert ev2.payload["amount"] == Decimal("16000.00")
+    assert ev2.payload["revenue_account_code"] == "2100"
+    assert ev2.payload["ar_account_code"] == "1200"  # DR AR, CR AP
+
+    published_events.clear()
+
+    # 2. Principal Mode
+    case_princ = Case(id=uuid4(), title="Principal Booking", case_type_id=uuid4(), data=dict(case_data))
+    ct_princ = CaseType(id=uuid4(), name="Travel", slug="travel", meta={"accounting_mode": "principal"})
+    await _post_confirmed_entries(session=None, case=case_princ, ct=ct_princ, tenant_id="tenant-1")
+
+    assert len(published_events) == 2
+    p_ev1, p_ev2 = published_events[0], published_events[1]
+    # Entry 1: Gross Revenue (sell price = 20,000)
+    assert p_ev1.payload["amount"] == Decimal("20000.00")
+    assert p_ev1.payload["revenue_account_code"] == "4010"
+    assert p_ev1.payload["ar_account_code"] == "1200"
+    # Entry 2: COGS (buy price = 16,000)
+    assert p_ev2.payload["amount"] == Decimal("16000.00")
+    assert p_ev2.payload["revenue_account_code"] == "2100"
+    assert p_ev2.payload["ar_account_code"] == "5010"  # DR Cost of Sales, CR AP
+
+

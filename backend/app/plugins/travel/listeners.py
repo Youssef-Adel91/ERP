@@ -80,18 +80,27 @@ async def _post_confirmed_entries(
     receivable_account = meta.get("receivable_gl_account", "1200")
     payable_account = meta.get("payable_gl_account", "2100")
     revenue_account = meta.get("revenue_gl_account", "4010")
+    accounting_mode = str(meta.get("accounting_mode", "principal")).strip().lower()
 
-    # ── Entry 1: Customer Receivable ──────────────────────────────────────────
-    # DR Accounts Receivable / CR Travel Revenue
+    # ── Entry 1: Customer Receivable / Revenue ────────────────────────────────
+    # Principal mode: DR AR / CR Travel Revenue for full sell price (Gross)
+    # Agent mode:     DR AR / CR Travel Commission Revenue for net commission only
     if not case.data.get("gl_receivable_posted"):
+        is_agent = accounting_mode == "agent"
+        rev_amount = financials.commission_amount if is_agent else financials.total_sell_price
+        entry_kind = "travel_agent_commission" if is_agent else "travel_customer_receivable"
+        narration = (
+            f"Travel Booking Commission (Net) — {case.title or str(case.id)}"
+            if is_agent
+            else f"Travel Booking Receivable — {case.title or str(case.id)}"
+        )
+
         await event_bus.publish(
             InvoiceCreatedEvent(
                 tenant_id=tenant_id,
                 payload=build_invoice_created_payload(
                     source="travel_plugin",
                     source_id=str(case.id),
-                    # Was entirely absent before — handle_invoice_created()
-                    # requires it and silently dropped every travel event.
                     invoice_number=f"TRV-{case.id.hex[:8].upper()}-AR",
                     customer_name=(
                         case.data.get("customer_name_ar")
@@ -99,13 +108,13 @@ async def _post_confirmed_entries(
                         or case.title
                         or str(case.id)
                     ),
-                    amount=financials.total_sell_price,
+                    amount=rev_amount,
                     currency=financials.currency,
                     revenue_account_code=revenue_account,
                     ar_account_code=receivable_account,
                     entry_date=date.today(),
-                    description=f"Travel Booking Receivable — {case.title or str(case.id)}",
-                    entry_type="travel_customer_receivable",
+                    description=narration,
+                    entry_type=entry_kind,
                     case_stage=_CONFIRM_STAGE,
                     passenger_count=financials.passenger_count,
                     margin=float(financials.total_margin),
@@ -117,8 +126,18 @@ async def _post_confirmed_entries(
         case.data = {**case.data, "gl_receivable_posted": True}
 
     # ── Entry 2: Supplier Payable ─────────────────────────────────────────────
-    # DR Cost of Sales / CR Accounts Payable
+    # Principal mode: DR Cost of Sales (5010) / CR Accounts Payable (2100)
+    # Agent mode:     DR Accounts Receivable (1200) / CR Accounts Payable (2100)
+    #                 (Pass-through liability: customer pays agency for supplier portion)
     if not case.data.get("gl_payable_posted") and financials.total_buy_price > 0:
+        is_agent = accounting_mode == "agent"
+        debit_account = receivable_account if is_agent else "5010"
+        narration = (
+            f"Travel Booking Supplier Pass-Through — {case.title or str(case.id)}"
+            if is_agent
+            else f"Travel Booking Supplier Cost — {case.title or str(case.id)}"
+        )
+
         await event_bus.publish(
             InvoiceCreatedEvent(
                 tenant_id=tenant_id,
@@ -135,9 +154,9 @@ async def _post_confirmed_entries(
                     amount=financials.total_buy_price,
                     currency=financials.currency,
                     revenue_account_code=payable_account,   # CR: Accounts Payable
-                    ar_account_code="5010",                 # DR: Cost of Sales
+                    ar_account_code=debit_account,          # DR: 1200 (Agent) or 5010 (Principal)
                     entry_date=date.today(),
-                    description=f"Travel Booking Supplier Cost — {case.title or str(case.id)}",
+                    description=narration,
                     entry_type="travel_supplier_payable",
                     case_stage=_CONFIRM_STAGE,
                 ),
@@ -146,7 +165,8 @@ async def _post_confirmed_entries(
         )
         case.data = {**case.data, "gl_payable_posted": True}
 
-    session.add(case)
+    if session is not None:
+        session.add(case)
 
 
 async def _post_cancellation_entries(
@@ -228,7 +248,8 @@ async def _post_cancellation_entries(
         )
 
     case.data = {**case.data, "gl_refund_posted": True}
-    session.add(case)
+    if session is not None:
+        session.add(case)
 
 
 # ── EventBus Handler ───────────────────────────────────────────────────────────
