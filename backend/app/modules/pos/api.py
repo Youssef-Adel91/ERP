@@ -316,7 +316,11 @@ async def checkout(
         try:
             invoice = await create_adhoc_invoice(session, contact_id=contact_id, lines=line_dicts)
             await session.flush()
-            invoice = await post_invoice(session=session, invoice_id=invoice.id)
+            invoice = await post_invoice(
+                session=session,
+                invoice_id=invoice.id,
+                tenant_id=current_user.tenant_id,
+            )
         except ValueError as exc:
             await session.rollback()
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
