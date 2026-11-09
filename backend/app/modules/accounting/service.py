@@ -378,7 +378,7 @@ async def close_period(period_id: UUID, closed_by: UUID, db: AsyncSession) -> Ac
 
     period.is_closed = True
     period.closed_by = closed_by
-    period.closed_at = datetime.now(UTC).replace(tzinfo=None)
+    period.closed_at = datetime.now(UTC)
     db.add(period)
     await db.commit()
     await db.refresh(period)
