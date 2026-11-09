@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "@/store/use-app-store";
 import { apiClient } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
+import { getAccessToken } from "@/lib/api-client";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
@@ -147,7 +148,10 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) {
+    // zustand's persist rehydrates asynchronously, so `user` is null on the
+    // first render after a hard refresh. Only bounce to /login when there is
+    // genuinely no session token; otherwise wait for the store to hydrate.
+    if (!user && !getAccessToken()) {
       router.push("/login");
     }
   }, [user, router]);

@@ -37,6 +37,9 @@ _SYSTEM_PROMPT = (
 )
 
 
+_MAX_TOOL_CALLS = 3
+
+
 def _build_tools() -> list[dict]:
     return [
         {
@@ -100,18 +103,38 @@ async def answer_question(db: AsyncSession, question: str, tenant_id: str | None
             model=settings.AI_MODEL,
         )
 
-    # Only ever execute the FIRST tool call — one grounded lookup per
-    # question (Level 2's multi-report variance analysis is future work).
-    call = tool_calls[0]
-    fn_name = call["function"]["name"]
-    try:
-        fn_args = json.loads(call["function"].get("arguments") or "{}")
-    except json.JSONDecodeError:
-        fn_args = {}
+    # Execute up to _MAX_TOOL_CALLS of the model's tool calls (a question like
+    # "total revenue and top customer" needs two reports). Narrating with only
+    # the first result made the model try to call the second one during the
+    # final turn, which the provider rejects with HTTP 400 (tool_use_failed).
+    executed: list[tuple[dict, str, object]] = []
+    for call in tool_calls[:_MAX_TOOL_CALLS]:
+        fn_name = call["function"]["name"]
+        try:
+            fn_args = json.loads(call["function"].get("arguments") or "{}")
+        except json.JSONDecodeError:
+            fn_args = {}
 
-    spec = REPORT_REGISTRY.get(fn_name)
-    if spec is None:
-        logger.warning("AI model requested unknown tool: %s", fn_name)
+        spec = REPORT_REGISTRY.get(fn_name)
+        if spec is None:
+            logger.warning("AI model requested unknown tool: %s", fn_name)
+            continue
+
+        # Real, tenant-scoped DB call — the ONLY source of numbers in this
+        # answer. A report flagged needs_tenant_id (e.g.
+        # get_customer_trust_profile) additionally needs the explicit
+        # tenant_id — never inferred — because it queries the shared
+        # public-schema Trust Network.
+        if spec.get("needs_tenant_id"):
+            if tenant_id is None:
+                logger.warning("Tool %s needs tenant_id but none was provided to answer_question", fn_name)
+                continue
+            result = await spec["fn"](db, tenant_id=tenant_id, **fn_args)
+        else:
+            result = await spec["fn"](db, **fn_args)
+        executed.append((call, fn_name, result))
+
+    if not executed:
         return AskResponse(
             answer="عذراً، حدث خطأ داخلي أثناء تجهيز الإجابة.",
             report_used=None,
@@ -120,35 +143,23 @@ async def answer_question(db: AsyncSession, question: str, tenant_id: str | None
             model=settings.AI_MODEL,
         )
 
-    # Real, tenant-scoped DB call — the ONLY source of numbers in this answer.
-    # A report flagged needs_tenant_id (e.g. get_customer_trust_profile,
-    # Phase F) additionally needs the explicit tenant_id — never inferred —
-    # because it queries the shared public-schema Trust Network.
-    if spec.get("needs_tenant_id"):
-        if tenant_id is None:
-            logger.warning("Tool %s needs tenant_id but none was provided to answer_question", fn_name)
-            return AskResponse(
-                answer="عذراً، حدث خطأ داخلي أثناء تجهيز الإجابة.",
-                report_used=None,
-                data=None,
-                generated_at=now,
-                model=settings.AI_MODEL,
-            )
-        result_data = await spec["fn"](db, tenant_id=tenant_id, **fn_args)
-    else:
-        result_data = await spec["fn"](db, **fn_args)
+    fn_name = executed[0][1]
+    result_data = executed[0][2]
 
     try:
         final_message = await chat_completion(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": question},
-                {"role": "assistant", "content": None, "tool_calls": [call]},
-                {
-                    "role": "tool",
-                    "tool_call_id": call["id"],
-                    "content": json.dumps(result_data, ensure_ascii=False, default=str),
-                },
+                {"role": "assistant", "content": None, "tool_calls": [c for c, _, _ in executed]},
+                *[
+                    {
+                        "role": "tool",
+                        "tool_call_id": c["id"],
+                        "content": json.dumps(r, ensure_ascii=False, default=str),
+                    }
+                    for c, _, r in executed
+                ],
             ],
         )
         answer_text = final_message.get("content") or "تم جلب البيانات، لكن تعذّر صياغة رد نصي."
