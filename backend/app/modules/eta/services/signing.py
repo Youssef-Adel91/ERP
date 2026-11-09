@@ -37,6 +37,7 @@ import base64
 import datetime
 import hashlib
 import os
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime as dt
@@ -151,7 +152,7 @@ def _resolve_signing_material(
     )
 
 
-_TEST_CERT_CACHE_PATH = "/tmp/eta_sandbox_test_signing_cert.p12"
+_TEST_CERT_CACHE_PATH = os.path.join(tempfile.gettempdir(), "eta_sandbox_test_signing_cert.p12")
 _test_cert_lock = threading.Lock()
 
 

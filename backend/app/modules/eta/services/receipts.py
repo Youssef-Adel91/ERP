@@ -92,6 +92,8 @@ async def build_and_sign_receipt_batch(
     tenant_id: UUID,
     pos_terminal_id: str,
     receipt_ids: list[str],
+    provider: SigningProvider | None = None,
+    allow_self_signed_test_cert: bool = False,
 ) -> EtaReceiptBatch:
     """
     Canonicalize and sign a batch of B2C e-Receipts (§5.1, FR-570, FR-574).
@@ -147,8 +149,12 @@ async def build_and_sign_receipt_batch(
     batch_hash_hex = hash_bytes.hex().upper()
 
     # 3. Sign the batch hash using tenant's signing provider
-    provider = get_signing_provider(tenant_config.signing_provider)
-    sig_res = await provider.sign_cades_bes(hash_bytes, tenant_id)
+    signing_provider = provider or get_signing_provider(
+        tenant_config.signing_provider,
+        secret_ref=tenant_config.client_secret_ref,
+        allow_self_signed_test_cert=allow_self_signed_test_cert,
+    )
+    sig_res = await signing_provider.sign_cades_bes(hash_bytes, tenant_id)
     signature_b64 = sig_res.get("signature_b64") or sig_res.get("value", "")
 
     # 4. Persist EtaReceiptBatch and update receipts

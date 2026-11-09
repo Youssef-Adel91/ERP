@@ -228,7 +228,10 @@ async def test_build_eta_invoice_success_and_cades_bes_signing(db_session: Async
     assert line_codes["EG-200300400-MOUNT1"] == "EGS"
 
     # 4. Test full signing pipeline via CloudHsmProvider
-    provider = CloudHsmProvider(hsm_url="https://hsm.egypttrust.com/api/v1/sign")
+    provider = CloudHsmProvider(
+        hsm_url="https://hsm.egypttrust.com/api/v1/sign",
+        allow_self_signed_test_cert=True,
+    )
     eta_doc = await prepare_signed_eta_document(db_session, invoice.id, tenant_config, provider=provider)
 
     assert eta_doc.state == EtaDocumentState.SIGNED
@@ -242,7 +245,7 @@ async def test_build_eta_invoice_success_and_cades_bes_signing(db_session: Async
     assert eta_doc.payload_json["signatures"][0]["value"] == eta_doc.signature_b64
 
     # 5. Also verify LocalHardwareTokenProvider produces valid signature structure
-    local_provider = LocalHardwareTokenProvider()
+    local_provider = LocalHardwareTokenProvider(allow_self_signed_test_cert=True)
     sign_local = await local_provider.sign_cades_bes(b"TEST_CANONICAL_BYTES", tenant_id)
-    assert sign_local["signing_provider"] == "LOCAL_TOKEN"
+    assert sign_local["signing_provider"] in ("LOCAL_TOKEN", "LOCAL_TOKEN_TEST")
     assert "value" in sign_local

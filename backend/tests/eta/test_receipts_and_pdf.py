@@ -153,6 +153,7 @@ async def test_receipt_72_hour_offline_window_flagging_late_arrival(db_session: 
         tenant_id=tenant_id,
         pos_terminal_id="POS-CAIRO-01",
         receipt_ids=["RCP-2001", "RCP-2002"],
+        allow_self_signed_test_cert=True,
     )
 
     assert batch.receipt_count == 2
@@ -205,6 +206,7 @@ async def test_submit_receipt_batch_timeout_f4_external_idempotency(db_session: 
         tenant_id=tenant_id,
         pos_terminal_id="POS-ALEX-01",
         receipt_ids=["RCP-3001"],
+        allow_self_signed_test_cert=True,
     )
 
     timeout_gateway = MockTimeoutReceiptGateway()
