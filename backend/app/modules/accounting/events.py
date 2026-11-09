@@ -297,14 +297,24 @@ async def handle_invoice_created(event: DomainEvent) -> None:
         # Record WHY on the posting record itself, on a fresh session (the one
         # above is poisoned by the failed transaction). This is what makes the
         # failure visible to the user instead of living only in the log.
-        if reserved_posting_id is not None:
-            try:
-                async with tenant_session(event.tenant_id) as fail_session:
-                    await mark_failed(fail_session, posting_id=reserved_posting_id, exc=exc)
-            except Exception:
-                logger.exception(
-                    "Could not record FAILED state for gl_posting %s", reserved_posting_id
+        try:
+            from app.modules.accounting.services.gl_posting import record_failure
+
+            async with tenant_session(event.tenant_id) as fail_session:
+                await record_failure(
+                    fail_session,
+                    source_type=posting_source_type,
+                    source_id=posting_source_id,
+                    entry_kind=entry_kind,
+                    exc=exc,
+                    invoice_number=invoice_number,
+                    amount=amount,
+                    currency=payload.get("currency", "EGP"),
                 )
+        except Exception:
+            logger.exception(
+                "Could not record FAILED state for %s/%s", posting_source_id, entry_kind
+            )
         raise  # Re-raise so _safe_handler_call logs the full traceback
 
 
