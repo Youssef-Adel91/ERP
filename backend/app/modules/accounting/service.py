@@ -302,7 +302,7 @@ async def post_journal_entry(
         )
 
     entry.status = JournalEntryStatus.POSTED
-    entry.posted_at = datetime.now(UTC).replace(tzinfo=None)
+    entry.posted_at = datetime.now(UTC)
 
     # 1. Allocate gapless sequence number (SELECT FOR UPDATE inside this transaction)
     fiscal_year = (entry.posted_at or datetime.now(UTC)).year

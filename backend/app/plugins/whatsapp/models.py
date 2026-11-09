@@ -71,5 +71,5 @@ class WhatsAppTenantConfig(PublicBase, table=True):
     # explicitly add at least one number via PUT /api/v1/whatsapp/config.
     authorized_numbers: list[str] = Field(
         default_factory=list,
-        sa_column=Column(sa.JSON, nullable=False, server_default=sa.text("'[]'::json")),
+        sa_column=Column(sa.JSON, nullable=False, server_default=sa.text("'[]'")),
     )
