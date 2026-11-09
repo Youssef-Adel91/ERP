@@ -135,7 +135,6 @@ class Invoice(SQLModel, table=True):
 
     # Relationships
     contact: "Contact" = Relationship(
-        back_populates="invoices",
         sa_relationship_kwargs={"lazy": "select"},
     )
     lines: list["InvoiceLine"] = Relationship(
