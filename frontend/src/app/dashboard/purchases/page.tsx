@@ -73,7 +73,7 @@ export default function PurchasesPage() {
   const { data: contacts } = useQuery({
     queryKey: ["contacts", "for-purchases"],
     queryFn: async () => {
-      const res = await apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } });
+      const res = await apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } });
       return res.data.items;
     },
   });

@@ -83,13 +83,13 @@ export default function RegisterPage() {
     }, 3000);
 
     try {
-      // Register takes up to ~60s (Alembic tenant migrations + COA seed)
+      // Register can take 2-3 min on a remote DB (one DDL round trip per table/index)
       const { data: res } = await apiClient.post<RegisterResponse>("/auth/register", {
         company_name: data.company_name,
         full_name: data.full_name,
         email: data.email,
         password: data.password,
-      }, { timeout: 120_000 });
+      }, { timeout: 300_000 });
 
       clearInterval(msgInterval);
 
@@ -108,7 +108,11 @@ export default function RegisterPage() {
     } catch (err) {
       clearInterval(msgInterval);
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(pickDetail(axiosErr, axiosErr.message || "حدث خطأ أثناء إنشاء الحساب."));
+      setErrorMsg(
+        axiosErr.response
+          ? pickDetail(axiosErr, "حدث خطأ أثناء إنشاء الحساب.")
+          : "تعذر إتمام التسجيل (الخادم لم يرد). لو الحساب اتنشأ جرّب تسجيل الدخول، وإلا حاول مرة أخرى بعد قليل.",
+      );
     } finally {
       setIsLoading(false);
     }

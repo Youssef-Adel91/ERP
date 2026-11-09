@@ -81,7 +81,7 @@ export default function FinancePage() {
     try {
       const [chequesRes, contactsRes] = await Promise.all([
         apiClient.get<{ total: number; items: Cheque[] }>("/finance/cheques"),
-        apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } }),
+        apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } }),
       ]);
       setCheques(chequesRes.data.items);
       setContacts(contactsRes.data.items);

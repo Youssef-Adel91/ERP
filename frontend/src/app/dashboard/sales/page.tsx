@@ -144,7 +144,7 @@ export default function SalesPage() {
   const { data: contacts } = useQuery({
     queryKey: ["contacts", "for-sales"],
     queryFn: async () => {
-      const res = await apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } });
+      const res = await apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } });
       return res.data.items;
     },
   });

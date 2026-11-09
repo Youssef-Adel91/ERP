@@ -86,7 +86,7 @@ export default function ContactsPage() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await apiClient.get<ContactListResponse>("/contacts", {
+      const { data } = await apiClient.get<ContactListResponse>("/contacts/", {
         params: {
           search: search || undefined,
           contact_type: typeFilter || undefined,
@@ -250,7 +250,7 @@ function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCre
     setSubmitting(true);
     setErrorMsg("");
     try {
-      await apiClient.post("/contacts", {
+      await apiClient.post("/contacts/", {
         contact_type: data.contact_type,
         name: data.name,
         phone: data.phone || undefined,

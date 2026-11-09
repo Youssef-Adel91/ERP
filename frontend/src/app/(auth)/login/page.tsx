@@ -84,7 +84,7 @@ export default function LoginPage() {
       if (axiosErr.response?.status === 401) {
         setErrorMsg("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
       } else {
-        setErrorMsg(pickDetail(axiosErr, axiosErr.message || "تعذر تسجيل الدخول، حاول مرة أخرى."));
+        setErrorMsg(pickDetail(axiosErr, axiosErr.response ? "تعذر تسجيل الدخول، حاول مرة أخرى." : "تعذر الاتصال بالخادم، حاول مرة أخرى بعد قليل."));
       }
     } finally {
       setIsLoading(false);

@@ -54,7 +54,7 @@ function ResetPasswordInner() {
       if (axiosErr.response?.status === 400 || axiosErr.response?.status === 401) {
         setErrorMsg("الرابط غير صالح أو منتهي الصلاحية، برجاء طلب رابط جديد.");
       } else {
-        setErrorMsg(pickDetail(axiosErr, axiosErr.message || "تعذر إعادة تعيين كلمة المرور، حاول مرة أخرى."));
+        setErrorMsg(pickDetail(axiosErr, axiosErr.response ? "تعذر إعادة تعيين كلمة المرور، حاول مرة أخرى." : "تعذر الاتصال بالخادم، حاول مرة أخرى بعد قليل."));
       }
     } finally {
       setIsLoading(false);

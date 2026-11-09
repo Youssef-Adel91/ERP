@@ -42,7 +42,7 @@ export default function OnboardingChecklist() {
 
   const { data: contacts } = useQuery({
     queryKey: ["onboarding-contacts"],
-    queryFn: async () => (await apiClient.get<{ items: unknown[] }>("/contacts", { params: { limit: 1 } })).data,
+    queryFn: async () => (await apiClient.get<{ items: unknown[] }>("/contacts/", { params: { limit: 1 } })).data,
     enabled: !dismissed,
   });
 
