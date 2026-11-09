@@ -113,6 +113,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("⚠️  Redis unavailable (refresh tokens disabled): %s", exc)
 
+    # ── Step 4: Reconcile orphaned provisioning tasks ─────────────────────────
+    try:
+        from app.modules.system.router import reconcile_orphaned_provisioning
+        await reconcile_orphaned_provisioning()
+    except Exception as exc:
+        logger.warning("Provisioning reconciler skipped: %s", exc)
+
     logger.info(
         "✅ EventBus handlers registered (backend=%s)", settings.EVENT_BUS_BACKEND,
     )

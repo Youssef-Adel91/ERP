@@ -158,6 +158,42 @@ async def _provision_in_background(tenant_id: str) -> None:
             pass
 
 
+async def reconcile_orphaned_provisioning() -> None:
+    """Find any tenant:provisioning:* keys left 'pending' after a crash/restart.
+    If the tenant is already ACTIVE in DB, clear the key.
+    If still PENDING_SETUP, resume background provisioning."""
+    import asyncio
+    from uuid import UUID
+
+    from app.core.db.database import _get_redis_client, public_session
+    from app.modules.system.models import ProvisioningState, Tenant, TenantStatus
+
+    try:
+        rc = await _get_redis_client()
+        keys = await rc.keys("tenant:provisioning:*")
+        for key in keys:
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            tenant_id_str = key_str.split(":")[-1]
+            try:
+                val = await rc.get(key_str)
+                val_str = val.decode() if isinstance(val, bytes) else str(val) if val else ""
+                if val_str == "pending":
+                    async with public_session() as session:
+                        tenant = await session.get(Tenant, UUID(tenant_id_str))
+                        if tenant is None:
+                            await rc.delete(key_str)
+                        elif tenant.status == TenantStatus.ACTIVE and tenant.provisioning_state == ProvisioningState.SEQUENCES_CREATED:
+                            await rc.delete(key_str)
+                            logger.info("Reconciled completed tenant %s: cleared provisioning key.", tenant_id_str)
+                        else:
+                            logger.warning("Reconciling interrupted provisioning for tenant %s: restarting in background.", tenant_id_str)
+                            asyncio.create_task(_provision_in_background(tenant_id_str))
+            except Exception as e:
+                logger.error("Error reconciling key %s: %s", key_str, e)
+    except Exception as exc:
+        logger.warning("reconcile_orphaned_provisioning encountered an error: %s", exc)
+
+
 @router.post(
     "/register",
     response_model=RegisterResponse,
