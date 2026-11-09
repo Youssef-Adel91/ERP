@@ -36,7 +36,7 @@ class AccountResponse(BaseModel):
 
 class AccountBalanceResponse(BaseModel):
     account_code: str
-    account_name: str
+    account_name: str | None = None
     account_type: AccountType
     total_debit: Decimal
     total_credit: Decimal
@@ -66,7 +66,7 @@ class TransactionLineCreateRequest(BaseModel):
 class TransactionLineResponse(BaseModel):
     id: UUID
     account_code: str
-    account_name: str
+    account_name: str | None = None
     debit: Decimal
     credit: Decimal
     description: str | None
@@ -137,7 +137,7 @@ class TrialBalanceRow(BaseModel):
 
     account_id: UUID | None
     account_code: str
-    account_name: str
+    account_name: str | None = None
     account_type: str
     total_debit: Decimal
     total_credit: Decimal

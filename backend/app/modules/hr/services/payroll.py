@@ -67,6 +67,7 @@ async def approve_payslip(session: AsyncSession, payslip_id: UUID) -> None:
             journal_entry_id=je.id,
             account_id=exp_acc.id,
             account_code=exp_acc.code,
+            account_name=exp_acc.name_ar or exp_acc.name,
             debit=payslip.net_pay,
             credit=Decimal("0.0"),
             description="Salaries Expense"
@@ -75,6 +76,7 @@ async def approve_payslip(session: AsyncSession, payslip_id: UUID) -> None:
             journal_entry_id=je.id,
             account_id=liab_acc.id,
             account_code=liab_acc.code,
+            account_name=liab_acc.name_ar or liab_acc.name,
             debit=Decimal("0.0"),
             credit=payslip.net_pay,
             description="Accrued Salaries Payable"
