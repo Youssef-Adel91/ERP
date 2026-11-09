@@ -116,7 +116,7 @@ export default function ForgotPasswordPage() {
                       ? "border-error focus:border-error ring-1 ring-error"
                       : "border-outline-variant"
                   }`}
-                  placeholder="example@nexus-erp.com"
+                  placeholder="example@trustcore.app"
                   dir="ltr"
                 />
                 {form.formState.errors.email && (
