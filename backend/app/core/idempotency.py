@@ -91,7 +91,11 @@ async def get_cached_resource_id(
     """
     if not idempotency_key:
         return None
-    raw: bytes | None = await redis_client.get(_redis_key(tenant_id, endpoint, idempotency_key))
+    try:
+        raw: bytes | None = await redis_client.get(_redis_key(tenant_id, endpoint, idempotency_key))
+    except Exception as exc:
+        logger.warning("Idempotency get failed due to Redis error: %s", exc)
+        return None
     if raw is None:
         return None
     try:
@@ -118,8 +122,11 @@ async def store_idempotent_result(
     """
     if not idempotency_key:
         return
-    await redis_client.setex(
-        _redis_key(tenant_id, endpoint, idempotency_key),
-        _TTL_SECONDS,
-        str(resource_id),
-    )
+    try:
+        await redis_client.setex(
+            _redis_key(tenant_id, endpoint, idempotency_key),
+            _TTL_SECONDS,
+            str(resource_id),
+        )
+    except Exception as exc:
+        logger.warning("Idempotency store failed due to Redis error: %s", exc)

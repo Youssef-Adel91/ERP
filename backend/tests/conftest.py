@@ -62,6 +62,10 @@ TestSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+import app.core.db.database as _db_mod
+_db_mod.engine = test_engine
+_db_mod.AsyncSessionLocal = TestSessionLocal
+
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():

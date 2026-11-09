@@ -62,6 +62,7 @@ engine_kwargs = {
 }
 if is_sqlite:
     engine_kwargs["connect_args"] = {"check_same_thread": False}
+    engine_kwargs["execution_options"] = {"schema_translate_map": {"tenant": None, "public": None}}
 else:
     engine_kwargs.update({
         "pool_size": 20,
@@ -303,8 +304,11 @@ async def tenant_session(tenant_id: UUID | str) -> AsyncGenerator[AsyncSession, 
     every Connection checked out for this Session — no matter how many times
     mid-request commits swap it out — carry the schema_translate_map.
     """
-    schema = schema_for(tenant_id)
-    translated_engine = engine.execution_options(schema_translate_map={"tenant": schema})
+    schema = None if is_sqlite else schema_for(tenant_id)
+    translate_map = {"tenant": schema}
+    if is_sqlite:
+        translate_map["public"] = None
+    translated_engine = engine.execution_options(schema_translate_map=translate_map)
     async with AsyncSession(bind=translated_engine, expire_on_commit=False, autoflush=False) as session:
         token = current_session.set(session)
         try:

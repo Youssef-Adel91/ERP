@@ -11,12 +11,11 @@ from unittest.mock import AsyncMock, patch
 
 pytestmark = pytest.mark.asyncio
 
-# We are testing the POST /api/v1/inventory/invoices endpoint
-# (The actual route might vary, using a mock payload here based on Phase 6 specifications)
+# We are testing the POST /api/v1/sales/invoices endpoint
 INVOICE_PAYLOAD = {
     "contact_id": "00000000-0000-0000-0000-000000000000",
     "lines": [
-        {"item_id": "11111111-1111-1111-1111-111111111111", "quantity": 1, "unit_price": 100}
+        {"item_id": "11111111-1111-1111-1111-111111111111", "qty": 1, "unit_price": 100}
     ]
 }
 
@@ -24,7 +23,7 @@ INVOICE_PAYLOAD = {
 @pytest.fixture
 async def mock_invoice_dependencies(db_session, seed_tenant_and_users):
     from app.modules.contacts.models import Contact, ContactType, ContactStatus
-    from app.plugins.inventory.models import Item
+    from app.modules.inventory.models.core import Item
     from sqlalchemy import select
     from decimal import Decimal
     from uuid import UUID
@@ -50,8 +49,6 @@ async def mock_invoice_dependencies(db_session, seed_tenant_and_users):
             id=i_id,
             sku="TEST-SKU",
             name="Test Item",
-            price=Decimal("100.00"),
-            is_active=True,
         )
         db_session.add(item)
         
@@ -67,7 +64,7 @@ async def test_invoicing_survives_redis_failure(client: AsyncClient, mock_invoic
          patch("app.core.db.database.redis_client.setex", side_effect=ConnectionError("Redis is down")):
         
         response = await client.post(
-            "/api/v1/inventory/invoices",
+            "/api/v1/sales/invoices",
             json=INVOICE_PAYLOAD
         )
         
@@ -84,7 +81,7 @@ async def test_invoicing_survives_eta_failure(client: AsyncClient, mock_invoice_
     with patch("app.modules.eta.services.submission.submit_eta_batch", side_effect=MockHTTPError("ETA 503 Service Unavailable")):
         
         response = await client.post(
-            "/api/v1/inventory/invoices",
+            "/api/v1/sales/invoices",
             json=INVOICE_PAYLOAD
         )
         
@@ -98,7 +95,7 @@ async def test_invoicing_survives_carrier_api_failure(client: AsyncClient, mock_
          patch("app.modules.logistics.providers.mylerz.MylerzProvider.create_shipment", side_effect=TimeoutError("Mylerz API Timeout")):
         
         response = await client.post(
-            "/api/v1/inventory/invoices",
+            "/api/v1/sales/invoices",
             json=INVOICE_PAYLOAD
         )
         
@@ -111,7 +108,7 @@ async def test_invoicing_survives_trust_network_failure(client: AsyncClient, moc
     with patch("app.modules.trust.services.scoring.calculate_reputation_band", side_effect=Exception("Trust DB Error")):
         
         response = await client.post(
-            "/api/v1/inventory/invoices",
+            "/api/v1/sales/invoices",
             json=INVOICE_PAYLOAD
         )
         
