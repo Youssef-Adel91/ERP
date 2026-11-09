@@ -37,6 +37,7 @@ class AccountMappingKey(str, Enum):
     SHIPPING_EXPENSE = "SHIPPING_EXPENSE"
     COD_FEE_EXPENSE = "COD_FEE_EXPENSE"
     RETURN_FEE_EXPENSE = "RETURN_FEE_EXPENSE"
+    PURCHASES_EXPENSE = "PURCHASES_EXPENSE"
 
 
 # Bug fix (live-reproduced, 20 Sep 2026): these codes used to be disjoint
@@ -85,6 +86,12 @@ DEFAULT_ACCOUNT_CONFIGS: dict[AccountMappingKey, dict[str, Any]] = {
         "code": "5050",
         "name": "Stock Variance Expense",
         "name_ar": "فروقات المخزون",
+        "account_type": AccountType.EXPENSE,
+    },
+    AccountMappingKey.PURCHASES_EXPENSE: {
+        "code": "5100",
+        "name": "Operating Expenses",
+        "name_ar": "المصروفات التشغيلية",
         "account_type": AccountType.EXPENSE,
     },
     AccountMappingKey.GRNI_ACCRUAL: {
