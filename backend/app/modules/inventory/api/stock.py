@@ -108,7 +108,7 @@ async def register_stock_receipt(
         qty_remaining=data.quantity,
         unit_cost_original=data.unit_cost,
         unit_cost_current=data.unit_cost,
-        received_at=datetime.now(UTC).replace(tzinfo=None),
+        received_at=datetime.now(UTC),
     )
     db.add(layer)
     await db.commit()

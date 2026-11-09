@@ -756,6 +756,14 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
                 )
                 session.add(account)
 
+        # Default warehouse: returns, stock receipts and transfers all require
+        # one, and a brand-new tenant had none (the return dialog's warehouse
+        # picker was empty, so no sales return could ever be processed).
+        from app.modules.inventory.models.core import WarehouseType as _WhType
+
+        async with tenant_session(tenant_id) as session:
+            session.add(Warehouse(name="المخزن الرئيسي", code="MAIN", type=_WhType.MAIN))
+
         logger.info(
             "✅ Tenant schema '%s' provisioned with %d default accounts.",
             schema,

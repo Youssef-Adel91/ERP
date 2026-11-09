@@ -144,7 +144,7 @@ async def dispatch_transfer(session: AsyncSession, transfer_id: UUID) -> StockTr
             transit_level.quantity += line.qty_dispatched
 
     transfer.status = TransferStatus.IN_TRANSIT
-    transfer.dispatched_at = datetime.now(UTC).replace(tzinfo=None)
+    transfer.dispatched_at = datetime.now(UTC)
     
     return transfer
 
@@ -275,6 +275,6 @@ async def receive_transfer(session: AsyncSession, transfer_id: UUID, receipt_lin
     else:
         transfer.status = TransferStatus.PARTIALLY_RECEIVED
         
-    transfer.received_at = datetime.now(UTC).replace(tzinfo=None)
+    transfer.received_at = datetime.now(UTC)
     
     return transfer

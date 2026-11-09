@@ -264,7 +264,7 @@ class CostLayer(SQLModel, table=True):
     is_provisional: bool = Field(default=False)
 
     received_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
         sa_column_kwargs={"server_default": text("now()")},
     )
     sequence_no: int = Field(default=1)
@@ -290,12 +290,12 @@ class StockMovement(SQLModel, table=True):
     contact_id: UUID | None = Field(default=None, index=True)
     
     occurred_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
         index=True
     )
     
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
         sa_column_kwargs={"server_default": text("now()")},
     )
 
