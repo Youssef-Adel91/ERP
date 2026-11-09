@@ -231,6 +231,13 @@ async def handle_invoice_created(event: DomainEvent) -> None:
                 return
             reserved_posting_id = posting.id
 
+            # Output-VAT account is scaffolded lazily (fresh tenants don't seed it).
+            if payload.get("tax_amount"):
+                from app.modules.accounting.services.mappings import (
+                    AccountMappingKey, get_default_account,
+                )
+                await get_default_account(session, AccountMappingKey.SALES_TAX_PAYABLE)
+
             entry = await create_journal_entry(
                 session=session,
                 description=f"Sales invoice for {customer} — {invoice_number}",
