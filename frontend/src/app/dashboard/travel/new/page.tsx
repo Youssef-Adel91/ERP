@@ -52,6 +52,8 @@ function NewBookingInner() {
   const [groupSize, setGroupSize] = useState<number | "">("");
   const [destination, setDestination] = useState("");
   const [notes, setNotes] = useState("");
+  const [sellPrice, setSellPrice] = useState<number | "">("");
+  const [buyPrice, setBuyPrice] = useState<number | "">("");
   const [errorMsg, setErrorMsg] = useState("");
 
   const { data: pkg } = useQuery({
@@ -106,6 +108,8 @@ function NewBookingInner() {
           trip_type: "package",
           services: [],
           currency: "EGP",
+          sell_price: sellPrice || undefined,
+          buy_price: buyPrice || undefined,
           notes: notes || undefined,
         },
       });
@@ -179,6 +183,16 @@ function NewBookingInner() {
         <Field label="عدد الأفراد">
           <input type="number" min={1} className="input" value={groupSize} onChange={(e) => setGroupSize(e.target.value ? Number(e.target.value) : "")} />
         </Field>
+        {!packageId && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="سعر البيع للعميل (ج.م)">
+              <input type="number" min={0} className="input" value={sellPrice} onChange={(e) => setSellPrice(e.target.value ? Number(e.target.value) : "")} />
+            </Field>
+            <Field label="تكلفة الشراء من المورد (ج.م)">
+              <input type="number" min={0} className="input" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value ? Number(e.target.value) : "")} />
+            </Field>
+          </div>
+        )}
         <Field label="ملاحظات">
           <textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
