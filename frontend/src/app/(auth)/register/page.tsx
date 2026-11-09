@@ -104,9 +104,40 @@ export default function RegisterPage() {
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=2540F0&color=fff`,
       });
 
+      // The server finishes creating the workspace in the background
+      // (~2-3 min). Keep the progress messages going and poll until ready.
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 10 * 60 * 1000;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const { data: st } = await apiClient.get<{ state: "ready" | "pending" | "failed" }>(
+            "/auth/provisioning-status",
+          );
+          if (st.state === "ready") break;
+          if (st.state === "failed") {
+            throw new Error("provisioning_failed");
+          }
+        } catch (pollErr) {
+          if (pollErr instanceof Error && pollErr.message === "provisioning_failed") throw pollErr;
+          // transient network/401-refresh hiccup: keep polling
+        }
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          throw new Error("provisioning_timeout");
+        }
+      }
+      clearInterval(msgInterval);
       router.push("/onboarding/systems");
     } catch (err) {
       clearInterval(msgInterval);
+      if (err instanceof Error && err.message === "provisioning_failed") {
+        setErrorMsg("تعذّر تجهيز مساحة العمل. تواصل مع الدعم الفني وسنكمل إعداد حسابك.");
+        return;
+      }
+      if (err instanceof Error && err.message === "provisioning_timeout") {
+        setErrorMsg("التجهيز أخذ وقتًا أطول من المتوقع. جرّب تسجيل الدخول بعد دقائق.");
+        return;
+      }
       const axiosErr = err as AxiosError<{ detail?: string }>;
       setErrorMsg(
         axiosErr.response

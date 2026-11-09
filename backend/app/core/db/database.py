@@ -1002,6 +1002,28 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 request.state.tenant_id = payload.tenant_id
                 request.state.current_user_id = payload.sub
                 request.state.current_user_roles = payload.roles
+                # Workspace still being created in the background (see
+                # app.modules.system.router.register)? Its schema/tables may
+                # not exist yet — answer cleanly instead of a confusing 500.
+                if payload.tenant_id and not request.url.path.startswith("/api/v1/auth"):
+                    try:
+                        _flag = await (await _get_redis_client()).get(
+                            f"tenant:provisioning:{payload.tenant_id}"
+                        )
+                    except Exception:  # noqa: BLE001 — Redis blip: fail open
+                        _flag = None
+                    if _flag is not None:
+                        _failed = (_flag.decode() if isinstance(_flag, bytes) else str(_flag)) == "failed"
+                        return Response(
+                            content=(
+                                '{"detail":"فشل تجهيز مساحة العمل. تواصل مع الدعم الفني.","code":"TENANT_PROVISIONING_FAILED"}'
+                                if _failed
+                                else '{"detail":"جاري تجهيز مساحة العمل، لحظات...","code":"TENANT_PROVISIONING"}'
+                            ),
+                            status_code=503,
+                            media_type="application/json",
+                            headers={"Retry-After": "5"},
+                        )
                 return await call_next(request)
             except JWTError:
                 return Response(
