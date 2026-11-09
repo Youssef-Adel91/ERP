@@ -33,3 +33,28 @@ def test_access_token_roundtrip():
     uid, tid = uuid4(), str(uuid4())
     payload = decode_token(create_access_token(uid, tid, ["OWNER"]))
     assert payload.sub == str(uid) and payload.tenant_id == tid and payload.roles == ["OWNER"]
+
+
+# ── Role gating on sensitive routers ─────────────────────────────────────────
+import asyncio
+from types import SimpleNamespace
+
+from fastapi import HTTPException
+
+from app.core.security.security import RequireRoleForWrites
+
+
+def _req(method: str, roles: list[str]):
+    return SimpleNamespace(method=method, state=SimpleNamespace(current_user_roles=roles))
+
+
+def test_writes_gate_blocks_wrong_role_but_allows_reads():
+    check = RequireRoleForWrites("OWNER", "ACCOUNTING")
+    asyncio.run(check(_req("GET", ["STAFF"])))  # reads open
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(check(_req("POST", ["STAFF"])))
+    assert e.value.status_code == 403
+
+
+def test_writes_gate_allows_permitted_role():
+    asyncio.run(RequireRoleForWrites("OWNER", "ACCOUNTING")(_req("DELETE", ["ACCOUNTING"])))

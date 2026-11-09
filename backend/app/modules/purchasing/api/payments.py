@@ -31,9 +31,10 @@ from app.modules.purchasing.services.payments import (
     create_supplier_payment,
     post_supplier_payment,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/purchasing/payments", tags=["Purchasing - Supplier Payments"])
+router = APIRouter(prefix="/purchasing/payments", tags=["Purchasing - Supplier Payments"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING'))])
 
 
 class PaymentAllocationIn(BaseModel):

@@ -31,7 +31,7 @@ def build_offer_letter_pdf(
     currency: str = "USD",
     start_date: str | None = None,
     order_reference: str | None = None,
-    agency_name: str = "Nexus ERP — Recruitment & Labor Export",
+    agency_name: str = "Trust Core — Recruitment & Labor Export",
     issue_date: date | None = None,
 ) -> bytes:
     """Generates a job offer letter PDF and returns raw bytes."""

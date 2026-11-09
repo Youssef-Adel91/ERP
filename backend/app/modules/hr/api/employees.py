@@ -16,9 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db as get_db_session
 from app.modules.hr.models.core import Employee, EmployeeStatus
+from app.core.security.security import RequireRole
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/hr/employees", tags=["HR & Payroll"])
+router = APIRouter(prefix="/hr/employees", tags=["HR & Payroll"], dependencies=[Depends(RequireRole('OWNER','ADMIN'))])
 
 
 class EmployeeCreate(BaseModel):

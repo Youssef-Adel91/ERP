@@ -90,7 +90,7 @@ logger = structlog.get_logger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup and shutdown logic."""
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info("  Omni ERP Platform — Starting [%s]", settings.ENVIRONMENT.upper())
+    logger.info("  Trust Core Platform — Starting [%s]", settings.ENVIRONMENT.upper())
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     # ── Step 1: PostgreSQL health check ───────────────────────────────────────
@@ -122,7 +122,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield  # ← Server accepts requests here
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    logger.info("Shutting down Omni ERP...")
+    logger.info("Shutting down Trust Core...")
     await engine.dispose()
     rc = await _get_redis_client()
     await rc.aclose()
@@ -143,7 +143,7 @@ def create_application() -> FastAPI:
         title=settings.PROJECT_NAME,
         version="0.1.0",
         description=(
-            "## Omni ERP — Multi-Tenant ERP & Trust Network Platform\n\n"
+            "## Trust Core — Multi-Tenant ERP & Trust Network Platform\n\n"
             "### 🚀 Quick Start\n"
             "1. `POST /api/v1/auth/register` — Register your company (no token needed)\n"
             "2. `POST /api/v1/auth/login` — Get JWT access + refresh tokens\n"

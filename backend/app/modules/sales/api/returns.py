@@ -27,9 +27,10 @@ from app.modules.sales.services.returns import (
     post_credit_note,
     process_sales_return,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/sales/returns", tags=["Sales - Returns"])
+router = APIRouter(prefix="/sales/returns", tags=["Sales - Returns"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING','SALES'))])
 
 
 class SalesReturnLineIn(BaseModel):

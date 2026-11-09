@@ -35,6 +35,7 @@ from app.modules.eta.models.core import (
     EtaSigningProvider,
     EtaTenantConfig,
 )
+from app.core.security.security import RequireRole
 from app.modules.system.dependencies import CurrentUser
 
 router = APIRouter(prefix="/eta", tags=["ETA E-Invoicing"])
@@ -53,7 +54,7 @@ class EtaTenantConfigIn(BaseModel):
     signing_provider: EtaSigningProvider = EtaSigningProvider.CLOUD_HSM
 
 
-@router.get("/config", response_model=EtaTenantConfig | None)
+@router.get("/config", dependencies=[Depends(RequireRole("OWNER", "ADMIN", "ACCOUNTING"))], response_model=EtaTenantConfig | None)
 async def get_config(
     current_user: CurrentUser,
     session: AsyncSession = Depends(get_tenant_db),
@@ -64,7 +65,7 @@ async def get_config(
     return result.scalar_one_or_none()
 
 
-@router.put("/config", response_model=EtaTenantConfig)
+@router.put("/config", dependencies=[Depends(RequireRole("OWNER", "ADMIN"))], response_model=EtaTenantConfig)
 async def upsert_config(
     data: EtaTenantConfigIn,
     current_user: CurrentUser,
@@ -99,7 +100,7 @@ class EgsCodeIn(BaseModel):
     name_en: str | None = None
 
 
-@router.post("/egs-codes", response_model=EgsCode, status_code=status.HTTP_201_CREATED)
+@router.post("/egs-codes", dependencies=[Depends(RequireRole("OWNER", "ADMIN"))], response_model=EgsCode, status_code=status.HTTP_201_CREATED)
 async def create_egs_code(
     data: EgsCodeIn,
     current_user: CurrentUser,

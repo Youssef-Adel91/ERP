@@ -51,9 +51,10 @@ from app.modules.purchasing.services.billing import (
     execute_three_way_match,
     post_vendor_bill,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/purchasing/bills", tags=["Purchasing - Vendor Bills"])
+router = APIRouter(prefix="/purchasing/bills", tags=["Purchasing - Vendor Bills"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING'))])
 
 
 class VendorBillLineIn(BaseModel):

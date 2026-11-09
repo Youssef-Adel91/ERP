@@ -517,3 +517,27 @@ def RequireRole(roles_or_first, *extra_roles: str):
             )
 
     return _check  # Return callable, NOT Depends — callers wrap with Depends()
+
+
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def RequireRoleForWrites(*roles: "UserRole | str"):
+    """
+    Like RequireRole, but only enforced on state-changing HTTP methods.
+    Reads stay open to every authenticated user; writes need one of `roles`.
+    Intended for router-level `dependencies=[Depends(RequireRoleForWrites(...))]`.
+    """
+    allowed = {r.value if hasattr(r, "value") else str(r) for r in roles}
+
+    async def _check(request: Request):
+        if request.method not in _WRITE_METHODS:
+            return
+        user_roles: list = getattr(request.state, "current_user_roles", [])
+        if not any(r in user_roles for r in allowed):
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required roles: {sorted(allowed)}.",
+            )
+
+    return _check

@@ -1,0 +1,4 @@
+﻿Set-Location $PSScriptRoot
+& .\.venv\Scripts\Activate.ps1
+Write-Host "🚀 FastAPI starting on http://127.0.0.1:8000" -ForegroundColor Cyan
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload

@@ -25,9 +25,10 @@ from app.modules.inventory.services.costing import (
     consume_stock,
     consume_stock_fifo,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/inventory/costing", tags=["Inventory - Costing"])
+router = APIRouter(prefix="/inventory/costing", tags=["Inventory - Costing"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING'))])
 
 
 class CostingRequestIn(BaseModel):

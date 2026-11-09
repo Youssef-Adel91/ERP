@@ -14,9 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_tenant_db
 from app.modules.finance.models.cheques import Cheque, ChequeStatus, ChequeType
 from app.modules.finance.services import cheque_service
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/api/v1/finance/cheques", tags=["cheques"])
+router = APIRouter(prefix="/api/v1/finance/cheques", tags=["cheques"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING'))])
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 

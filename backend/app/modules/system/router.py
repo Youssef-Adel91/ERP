@@ -495,7 +495,7 @@ async def forgot_password(
     async def _send_reset_email() -> None:
         await send_email(
             to_email=user.email,
-            subject="إعادة تعيين كلمة المرور — Omni ERP",
+            subject="إعادة تعيين كلمة المرور — Trust Core",
             body_text=(
                 f"مرحبًا {user.full_name or ''},\n\n"
                 "تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك.\n"

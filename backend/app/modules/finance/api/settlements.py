@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 from app.modules.finance.models.settlements import (
     CarrierReceivableSnapshot,
@@ -51,7 +52,7 @@ from app.modules.finance.services.posting import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/finance/settlements", tags=["COD Settlements"])
+router = APIRouter(prefix="/api/v1/finance/settlements", tags=["COD Settlements"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING'))])
 
 
 class SettlementMatchJsonRequest(BaseModel):

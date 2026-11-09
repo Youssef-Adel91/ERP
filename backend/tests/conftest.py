@@ -220,5 +220,5 @@ def _get_admin_token() -> str:
     return create_access_token(
         user_id=TEST_ADMIN_ID,
         tenant_id=str(TEST_TENANT_ID),
-        roles=["admin"],
+        roles=["OWNER"],
     )
