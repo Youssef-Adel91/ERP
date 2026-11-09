@@ -273,6 +273,11 @@ function CreateJobOrderModal({ onClose }: { onClose: () => void }) {
               <option value="">اختر...</option>
               {sponsors?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+            {sponsors && sponsors.length === 0 && (
+              <p className="text-body-sm text-on-surface-variant">
+                لا توجد جهات اتصال بعد — <a href="/dashboard/contacts" className="text-primary font-semibold underline">أضف صاحب العمل من جهات الاتصال</a> أولًا.
+              </p>
+            )}
             {errors.sponsor_id && <p className="text-body-sm text-error">{errors.sponsor_id.message}</p>}
           </div>
           <div className="grid grid-cols-2 gap-4">
