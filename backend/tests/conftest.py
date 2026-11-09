@@ -77,6 +77,8 @@ async def setup_database():
     from app.modules.logistics import models as _m4  # noqa: F401
     from app.modules.purchasing import models as _m5  # noqa: F401
     from app.modules.trust import models as _m7  # noqa: F401
+    from app.modules.contacts import models as _m8  # noqa: F401
+    from app.modules.sales import models as _m9  # noqa: F401
 
     async with test_engine.begin() as conn:
         conn_translated = await conn.execution_options(schema_translate_map={"tenant": None, "public": None})

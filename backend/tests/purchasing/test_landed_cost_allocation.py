@@ -49,6 +49,7 @@ from app.modules.purchasing.services.allocation import (
     create_import_shipment,
     post_landed_costs,
 )
+from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.purchasing.services.receiving import receive_goods
 from app.modules.system.models import OutboxEvent
@@ -109,6 +110,15 @@ async def test_landed_cost_shipment_posting_and_gl_bridge(db_session: AsyncSessi
     """
     supplier_id = uuid4()
     warehouse_id = uuid4()
+    db_session.add(
+        Contact(
+            id=supplier_id,
+            name="Test Supplier",
+            contact_type=ContactType.SUPPLIER,
+            status=ContactStatus.ACTIVE,
+        )
+    )
+    await db_session.flush()
 
     # 1. Create PO for 3 equal items (10 units each @ 100 EGP)
     item_ids = [uuid4(), uuid4(), uuid4()]

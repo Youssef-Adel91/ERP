@@ -50,7 +50,23 @@ from app.modules.purchasing.services.billing import (
 )
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.purchasing.services.receiving import receive_goods
+from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.system.models import OutboxEvent
+
+
+async def _make_supplier(session: AsyncSession, supplier_id: UUID | None = None) -> UUID:
+    sid = supplier_id or uuid4()
+    c = await session.get(Contact, sid)
+    if not c:
+        c = Contact(
+            id=sid,
+            name="Test Supplier",
+            contact_type=ContactType.SUPPLIER,
+            status=ContactStatus.ACTIVE,
+        )
+        session.add(c)
+        await session.flush()
+    return sid
 
 
 @pytest.mark.asyncio
@@ -59,7 +75,7 @@ async def test_three_way_match_over_billing_raises_error(db_session: AsyncSessio
     Test that attempting to bill for more quantity than was received raises ThreeWayMatchError
     and blocks the bill with VARIANCE_BLOCKED match_state.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
 
     # 1. Create PO for 100 units @ 10.00
@@ -137,7 +153,7 @@ async def test_three_way_match_price_variance_raises_error(db_session: AsyncSess
     """
     Test that attempting to bill at a higher unit price than PO raises ThreeWayMatchError.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
 
     po = await create_purchase_order(
@@ -204,7 +220,7 @@ async def test_three_way_match_success_and_gl_posting(db_session: AsyncSession, 
       4. GL Bridge Consumers process purchase.goods_received and purchase.bill_posted,
          verifying GRNI liability accrual and subsequent clearing to Accounts Payable.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
 
     # 1. Create PO for 80 units @ 15.00 (= 1200.00 total)
