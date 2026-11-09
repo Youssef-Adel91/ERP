@@ -38,7 +38,7 @@ async def ingest_carrier_webhook(
     provider = get_carrier_provider(carrier_code)
 
     # 1. Verify cryptographic signature if secret is configured
-    if not provider.verify_webhook_signature(raw_bytes, headers, secret):
+    if secret and not provider.verify_webhook_signature(raw_bytes, headers, secret):
         logger.warning(
             "Invalid webhook signature for carrier='%s' (tenant='%s')",
             carrier_code,

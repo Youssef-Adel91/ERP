@@ -8,6 +8,9 @@ Tests:
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
+import json
 
 import pytest
 import pytest_asyncio
@@ -123,10 +126,16 @@ async def test_carrier_webhook_endpoint_202(client: AsyncClient, patched_tenant_
         "trackingNumber": "BST-API-202",
         "state": {"value": "PICKED_UP"},
     }
+    raw_bytes = json.dumps(payload).encode("utf-8")
+    sig = hmac.new(b"resolved_vault_carrier_webhook_secret_value", raw_bytes, hashlib.sha256).hexdigest()
     response = await client.post(
         "/api/v1/webhooks/carriers/bosta",
-        json=payload,
-        headers={"X-Tenant-ID": str(TEST_TENANT_ID)},
+        content=raw_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Tenant-ID": str(TEST_TENANT_ID),
+            "x-bosta-signature": sig,
+        },
     )
     assert response.status_code == 202
     data = response.json()
