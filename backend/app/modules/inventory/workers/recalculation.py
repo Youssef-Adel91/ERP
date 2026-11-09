@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -43,7 +43,7 @@ async def recalculate_cost_from_date(
         # Verify that from_date does not fall into a closed accounting period
         period_stmt = select(AccountingPeriod).where(
             AccountingPeriod.end_date >= from_date,
-            AccountingPeriod.start_date <= datetime.utcnow(),
+            AccountingPeriod.start_date <= datetime.now(UTC),
             AccountingPeriod.is_closed.is_(True),
         )
         closed_periods = (await session.execute(period_stmt)).scalars().all()

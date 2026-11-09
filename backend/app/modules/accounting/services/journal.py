@@ -61,10 +61,10 @@ async def create_journal_entry(
         raise ValueError("A journal entry must contain at least one debit and one credit line.")
 
     # ── PERIOD VALIDATION (THE HARD BLOCK) ────────────────────────────────────
-    from datetime import datetime, time
+    from datetime import UTC, datetime, time
     from app.modules.accounting.models.core import AccountingPeriod
-    entry_start_dt = datetime.combine(entry_date, time.min)
-    entry_end_dt = datetime.combine(entry_date, time.max)
+    entry_start_dt = datetime.combine(entry_date, time.min, tzinfo=UTC)
+    entry_end_dt = datetime.combine(entry_date, time.max, tzinfo=UTC)
     period_stmt = select(AccountingPeriod).where(
         AccountingPeriod.start_date <= entry_end_dt,
         AccountingPeriod.end_date >= entry_start_dt,

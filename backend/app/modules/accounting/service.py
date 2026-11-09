@@ -282,8 +282,8 @@ async def post_journal_entry(
     # type, so the router's existing exception handling (added below) covers
     # both paths identically.
     from datetime import time as _time
-    entry_start_dt = datetime.combine(entry.entry_date, _time.min)
-    entry_end_dt = datetime.combine(entry.entry_date, _time.max)
+    entry_start_dt = datetime.combine(entry.entry_date, _time.min, tzinfo=UTC)
+    entry_end_dt = datetime.combine(entry.entry_date, _time.max, tzinfo=UTC)
     period_res = await db.execute(
         select(AccountingPeriod).where(
             AccountingPeriod.start_date <= entry_end_dt,
