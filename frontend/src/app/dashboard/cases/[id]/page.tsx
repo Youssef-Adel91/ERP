@@ -227,6 +227,13 @@ const ENUM_VALUE_LABEL_AR: Record<string, string> = {
 const labelize = (key: string) => FIELD_LABEL_AR[key] ?? key.replace(/_/g, " ");
 const enumValueLabel = (value: string) => ENUM_VALUE_LABEL_AR[value] ?? value;
 
+// System-managed bookkeeping keys (GL posting flags, timestamps stamped by the
+// engine) — never shown to or edited by end users.
+const isSystemField = (key: string) =>
+  /^(gl_|posting_|commission_posted|deployment_fee_posted)/.test(key) ||
+  key.endsWith("_posted") ||
+  key === "confirmed_at";
+
 export default function CaseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -462,7 +469,7 @@ export default function CaseDetailPage() {
 
           {targetSchema?.properties && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-outline-variant/30">
-              {Object.entries(targetSchema.properties).map(([key, prop]) => {
+              {Object.entries(targetSchema.properties).filter(([key]) => !isSystemField(key)).map(([key, prop]) => {
                 const required = targetSchema.required?.includes(key);
                 if (prop.type === "array" && prop.items?.type === "object" && prop.items.properties) {
                   return (
@@ -507,7 +514,11 @@ export default function CaseDetailPage() {
           <div className="pt-3 border-t border-outline-variant/30">
             <h3 className="text-body-sm font-semibold text-on-surface-variant mb-2">البيانات الحالية للحالة</h3>
             <pre className="text-[12px] font-data-mono bg-surface-container-low rounded-lg p-3 overflow-x-auto" dir="ltr">
-              {JSON.stringify(caseData.data, null, 2)}
+              {JSON.stringify(
+                Object.fromEntries(Object.entries(caseData.data ?? {}).filter(([k]) => !isSystemField(k))),
+                null,
+                2,
+              )}
             </pre>
           </div>
         </form>
