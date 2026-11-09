@@ -20,7 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events.event_bus import DomainEvent
 from app.modules.accounting.events import _build_invoice_lines, handle_invoice_created
-from app.modules.accounting.models.core import Account, AccountType, JournalEntry, JournalEntryLine
+from app.modules.accounting.models.core import (
+    Account,
+    AccountType,
+    JournalEntry,
+    JournalEntryLine,
+    JournalEntryStatus,
+)
 from app.modules.accounting.models.posting import GLPosting, GLPostingStatus
 from app.modules.accounting.services.gl_posting import record_failure, reserve_posting
 from app.modules.accounting.services.mappings import AccountMappingKey, get_default_account
@@ -332,3 +338,65 @@ def test_recruitment_import_header_normalisation():
     assert canon_map[2] == "profession"
     assert canon_map[3] == "target_country"
     assert canon_map[4] == "nationality"
+
+
+# ── 6. Sales Return Cash Refund Flow ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sales_return_cash_refund_gl_flow(db_session: AsyncSession, seed_tenant_and_users):
+    """
+    Returns on a paid invoice leave a customer credit balance.
+    refund_sales_return() issues a cash refund:
+      DR Accounts Receivable (1200) 500.00 (clears customer credit balance)
+      CR Cash & Banks (1100)        500.00 (cash paid out)
+    """
+    from app.modules.sales.models.returns import SalesReturn, SalesReturnStatus
+    from app.modules.sales.services.returns import refund_sales_return
+
+    contact = Contact(
+        id=uuid4(),
+        name="Customer Refund Test",
+        contact_type=ContactType.CUSTOMER,
+        status=ContactStatus.ACTIVE,
+    )
+    db_session.add(contact)
+    await db_session.flush()
+
+    sales_return = SalesReturn(
+        id=uuid4(),
+        return_number="RET-REFUND-001",
+        contact_id=contact.id,
+        invoice_id=uuid4(),
+        status=SalesReturnStatus.CREDITED,
+        subtotal=Decimal("450.0000"),
+        tax_total=Decimal("50.0000"),
+        grand_total=Decimal("500.0000"),
+    )
+    db_session.add(sales_return)
+    await db_session.commit()
+
+    ret, entry = await refund_sales_return(db_session, return_id=sales_return.id)
+    assert ret.id == sales_return.id
+    assert entry.status == JournalEntryStatus.POSTED
+    assert entry.reference == "REFUND-RET-REFUND-001"
+
+    # Verify journal entry lines: DR 1200, CR 1100
+    q = await db_session.execute(
+        select(JournalEntryLine).where(JournalEntryLine.journal_entry_id == entry.id)
+    )
+    lines = q.scalars().all()
+    assert len(lines) == 2
+
+    ar_line = next(l for l in lines if l.account_code == "1200")
+    cash_line = next(l for l in lines if l.account_code == "1100")
+
+    assert ar_line.debit == Decimal("500.0000")
+    assert ar_line.credit == Decimal("0.0000")
+
+    assert cash_line.debit == Decimal("0.0000")
+    assert cash_line.credit == Decimal("500.0000")
+
+    # Idempotency: second attempt raises ValueError
+    with pytest.raises(ValueError, match="already been refunded"):
+        await refund_sales_return(db_session, return_id=sales_return.id)
+

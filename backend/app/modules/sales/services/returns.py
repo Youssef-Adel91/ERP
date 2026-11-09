@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -362,3 +363,81 @@ async def post_credit_note(
     await session.flush()
     await session.refresh(return_obj)
     return return_obj
+
+
+async def refund_sales_return(
+    session: AsyncSession,
+    return_id: UUID,
+    amount: Decimal | None = None,
+    treasury_account_id: UUID | None = None,
+    payment_method: str = "CASH",
+    reference: str | None = None,
+) -> tuple[SalesReturn, Any]:
+    """
+    Issues a cash/bank refund for a CREDITED sales return.
+    Books the GL entry:
+      DR Accounts Receivable (1200) — clears customer credit note balance
+      CR Cash & Banks (1100)        — pays out money
+    """
+    from datetime import date
+    from app.modules.accounting.models.core import JournalEntry, JournalEntryStatus
+    from app.modules.accounting.services.journal import create_journal_entry
+    from app.modules.accounting.services.mappings import (
+        AccountMappingKey,
+        get_default_account_id,
+    )
+
+    return_obj = await session.get(SalesReturn, return_id)
+    if not return_obj:
+        raise ValueError(f"SalesReturn not found: {return_id}")
+
+    if return_obj.status != SalesReturnStatus.CREDITED:
+        raise ValueError(
+            f"Cannot refund SalesReturn in status '{return_obj.status}'. Return must be CREDITED first."
+        )
+
+    refund_amount = Decimal(str(amount)) if amount is not None else return_obj.grand_total
+    if refund_amount <= Decimal("0.0000"):
+        raise ValueError("Refund amount must be positive.")
+
+    # Idempotency check: verify this return has not already been refunded
+    existing_entry_stmt = select(JournalEntry).where(
+        JournalEntry.source_type == "sales.return_refund",
+        JournalEntry.source_id == return_obj.id,
+    )
+    existing_entry = (await session.execute(existing_entry_stmt)).scalars().first()
+    if existing_entry is not None:
+        raise ValueError(f"SalesReturn '{return_obj.return_number}' has already been refunded (Entry {existing_entry.reference}).")
+
+    ar_account_id = await get_default_account_id(session, AccountMappingKey.ACCOUNTS_RECEIVABLE)
+    cash_account_id = treasury_account_id or await get_default_account_id(
+        session, AccountMappingKey.CASH_AND_BANKS
+    )
+
+    ref_str = reference or f"REFUND-{return_obj.return_number}"
+    entry = await create_journal_entry(
+        session=session,
+        description=f"Cash Refund for Return {return_obj.return_number} ({payment_method})",
+        entry_date=date.today(),
+        lines=[
+            {
+                "account_id": ar_account_id,
+                "debit": refund_amount,
+                "credit": Decimal("0.0000"),
+                "description": f"Customer Credit Note Refund (AR) — {return_obj.return_number}",
+            },
+            {
+                "account_id": cash_account_id,
+                "debit": Decimal("0.0000"),
+                "credit": refund_amount,
+                "description": f"Cash Paid Out — {return_obj.return_number}",
+            },
+        ],
+        reference=ref_str,
+        reference_id=return_obj.id,
+        source_type="sales.return_refund",
+        source_id=return_obj.id,
+        status=JournalEntryStatus.POSTED,
+    )
+
+    return return_obj, entry
