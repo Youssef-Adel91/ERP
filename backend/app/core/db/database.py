@@ -754,13 +754,14 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         # deliberately wide-open period (2020–2099) so postings are never
         # blocked by a missing period; an OWNER/ADMIN/ACCOUNTING user can later
         # close/split periods via the accounting UI once that workflow exists.
+        from datetime import UTC as _UTC
         from datetime import datetime as _dt
 
         async with tenant_session(tenant_id) as session:
             session.add(AccountingPeriod(
                 name="Open Period",
-                start_date=_dt(2020, 1, 1),
-                end_date=_dt(2099, 12, 31, 23, 59, 59),
+                start_date=_dt(2020, 1, 1, tzinfo=_UTC),
+                end_date=_dt(2099, 12, 31, 23, 59, 59, tzinfo=_UTC),
                 is_closed=False,
             ))
         logger.info("✅ Tenant schema '%s' seeded with a default open AccountingPeriod.", schema)
