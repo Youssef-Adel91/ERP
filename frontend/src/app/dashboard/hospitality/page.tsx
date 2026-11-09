@@ -135,31 +135,20 @@ const stageTone: Record<string, string> = {
 const egp = (v: string | number) => `${Number(v).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ج.م`;
 
 export default function HospitalityPage() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"rooms" | "reservations">("rooms");
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  // Room edit/delete: the backend has had PATCH /hospitality/rooms/{id} and
-  // DELETE /hospitality/rooms/{id} all along, but the card exposed no way to
-  // reach either — clicking a room did nothing at all (live-confirmed gap).
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
+  const { data: rooms = [], isLoading: loading, isError } = useQuery({
+    queryKey: ["hospitality-rooms"],
+    queryFn: async () => {
       const { data } = await apiClient.get<Room[]>("/hospitality/rooms");
-      setRooms(data);
-    } catch {
-      setError("تعذر تحميل الغرف. فعّل موديول الضيافة من صفحة الحالات أولاً.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+      return data;
+    },
+  });
+  const error = isError ? "تعذر تحميل الغرف. فعّل موديول الضيافة من صفحة الحالات أولاً." : "";
 
   return (
     <div className="space-y-gutter">
@@ -213,6 +202,15 @@ export default function HospitalityPage() {
                       <span>{roomTypeLabel[r.attributes.room_type ?? ""] ?? r.attributes.room_type}</span>
                       <span className="flex items-center gap-1"><Users2 className="w-3.5 h-3.5" /> {r.attributes.capacity}</span>
                     </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-outline-variant/30">
+                    <div className="font-bold text-primary text-body-md">
+                      {r.attributes.base_rate != null ? (
+                        <span>{egp(r.attributes.base_rate)} <span className="text-[11px] font-normal text-on-surface-variant">/ ليلة</span></span>
+                      ) : (
+                        <span className="text-[12px] font-normal text-on-surface-variant">سعر غير محدد</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
@@ -239,19 +237,33 @@ export default function HospitalityPage() {
             </div>
           )}
 
-          {modalOpen && <RoomModal onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); fetchAll(); }} />}
+          {modalOpen && (
+            <RoomModal
+              onClose={() => setModalOpen(false)}
+              onSaved={() => {
+                setModalOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["hospitality-rooms"] });
+              }}
+            />
+          )}
           {editingRoom && (
             <RoomModal
               room={editingRoom}
               onClose={() => setEditingRoom(null)}
-              onSaved={() => { setEditingRoom(null); fetchAll(); }}
+              onSaved={() => {
+                setEditingRoom(null);
+                queryClient.invalidateQueries({ queryKey: ["hospitality-rooms"] });
+              }}
             />
           )}
           {deletingRoom && (
             <DeleteRoomDialog
               room={deletingRoom}
               onClose={() => setDeletingRoom(null)}
-              onDeleted={() => { setDeletingRoom(null); fetchAll(); }}
+              onDeleted={() => {
+                setDeletingRoom(null);
+                queryClient.invalidateQueries({ queryKey: ["hospitality-rooms"] });
+              }}
             />
           )}
         </>
@@ -424,7 +436,12 @@ function ReservationsTab({ rooms }: { rooms: Room[] }) {
   const transitionMutation = useMutation({
     mutationFn: async ({ id, to_stage, data_patch }: { id: string; to_stage: string; data_patch?: Record<string, any> }) =>
       apiClient.post(`/cases/${id}/transition`, { to_stage, data_patch }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["hospitality-reservations"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hospitality-reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["room-availability"] });
+      queryClient.invalidateQueries({ queryKey: ["hospitality-rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["cases"] });
+    },
   });
 
   if (!caseType) {
@@ -539,7 +556,13 @@ function ReservationsTab({ rooms }: { rooms: Room[] }) {
           caseTypeId={caseType.id}
           rooms={rooms}
           onClose={() => setNewModalOpen(false)}
-          onCreated={() => { setNewModalOpen(false); queryClient.invalidateQueries({ queryKey: ["hospitality-reservations"] }); }}
+          onCreated={() => {
+            setNewModalOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["hospitality-reservations"] });
+            queryClient.invalidateQueries({ queryKey: ["room-availability"] });
+            queryClient.invalidateQueries({ queryKey: ["hospitality-rooms"] });
+            queryClient.invalidateQueries({ queryKey: ["cases"] });
+          }}
         />
       )}
       {folioCaseId && <FolioModal caseId={folioCaseId} onClose={() => setFolioCaseId(null)} />}
@@ -742,6 +765,7 @@ function FolioModal({ caseId, onClose }: { caseId: string; onClose: () => void }
       apiClient.post(`/hospitality/reservations/${caseId}/folio/items`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folio", caseId] });
+      queryClient.invalidateQueries({ queryKey: ["hospitality-reservations"] });
       reset({ category: "restaurant", description: "", amount: 0, quantity: 1 });
     },
   });
