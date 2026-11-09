@@ -32,6 +32,11 @@ class AccountMappingKey(str, Enum):
     INPUT_VAT_RECEIVABLE = "INPUT_VAT_RECEIVABLE"
     LANDED_COST_CLEARING = "LANDED_COST_CLEARING"
     CASH_AND_BANKS = "CASH_AND_BANKS"
+    NOTES_RECEIVABLE = "NOTES_RECEIVABLE"
+    NOTES_PAYABLE = "NOTES_PAYABLE"
+    SALARIES_EXPENSE = "SALARIES_EXPENSE"
+    SALARIES_PAYABLE = "SALARIES_PAYABLE"
+    PAYROLL_DEDUCTIONS_PAYABLE = "PAYROLL_DEDUCTIONS_PAYABLE"
     CASH_WITH_CARRIER = "CASH_WITH_CARRIER"
     FX_VARIANCE_EXPENSE = "FX_VARIANCE_EXPENSE"
     SHIPPING_EXPENSE = "SHIPPING_EXPENSE"
@@ -116,6 +121,36 @@ DEFAULT_ACCOUNT_CONFIGS: dict[AccountMappingKey, dict[str, Any]] = {
         "code": "2120",
         "name": "Landed Cost Clearing",
         "name_ar": "مصاريف الشحن والاستيراد المعلقة",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.SALARIES_EXPENSE: {
+        "code": "5200",
+        "name": "Salaries & Wages Expense",
+        "name_ar": "مصروف الرواتب والأجور",
+        "account_type": AccountType.EXPENSE,
+    },
+    AccountMappingKey.SALARIES_PAYABLE: {
+        "code": "2120",
+        "name": "Accrued Salaries Payable",
+        "name_ar": "رواتب مستحقة الدفع",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.PAYROLL_DEDUCTIONS_PAYABLE: {
+        "code": "2130",
+        "name": "Payroll Deductions Payable",
+        "name_ar": "استقطاعات الرواتب المستحقة (تأمينات/ضرائب)",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.NOTES_RECEIVABLE: {
+        "code": "1150",
+        "name": "Notes Receivable (Cheques)",
+        "name_ar": "أوراق القبض (شيكات تحت التحصيل)",
+        "account_type": AccountType.ASSET,
+    },
+    AccountMappingKey.NOTES_PAYABLE: {
+        "code": "2150",
+        "name": "Notes Payable (Cheques)",
+        "name_ar": "أوراق الدفع (شيكات صادرة)",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.CASH_AND_BANKS: {

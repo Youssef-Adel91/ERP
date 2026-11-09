@@ -39,17 +39,20 @@ async def approve_payslip(session: AsyncSession, payslip_id: UUID) -> None:
         # Don't post empty or negative journal entries
         return
     
-    # 3. Post to General Ledger
-    # For MVP, assuming 5100 = Operating/Salaries Expense, 2100 = Accounts Payable / Liability
-    exp_acc = await session.scalar(select(Account).where(Account.code == "5100"))
-    liab_acc = await session.scalar(select(Account).where(Account.code == "2100"))
-    
-    if not exp_acc or not liab_acc:
-        raise HTTPException(
-            status_code=500, 
-            detail="Required GL accounts (5100, 2100) not found in Chart of Accounts."
-        )
-        
+    # 3. Post to General Ledger — standard payroll accrual:
+    #    DR Salaries Expense (gross = basic + allowances)
+    #    CR Accrued Salaries Payable (net pay owed to the employee)
+    #    CR Payroll Deductions Payable (insurance / tax withheld, owed to authorities)
+    from app.modules.accounting.services.mappings import (
+        AccountMappingKey,
+        get_default_account,
+    )
+
+    exp_acc = await get_default_account(session, AccountMappingKey.SALARIES_EXPENSE)
+    pay_acc = await get_default_account(session, AccountMappingKey.SALARIES_PAYABLE)
+    gross = payslip.basic_wage + payslip.allowances
+    deductions = payslip.deductions or Decimal("0.0")
+
     je = JournalEntry(
         reference=f"PAYSLIP-{str(payslip_id)[:8].upper()}",
         reference_id=payslip_id,
@@ -60,25 +63,39 @@ async def approve_payslip(session: AsyncSession, payslip_id: UUID) -> None:
         source_id=payslip_id,
     )
     session.add(je)
-    await session.flush() # Ensures we get je.id
-    
-    session.add_all([
+    await session.flush()  # Ensures we get je.id
+
+    lines = [
         JournalEntryLine(
             journal_entry_id=je.id,
             account_id=exp_acc.id,
             account_code=exp_acc.code,
             account_name=exp_acc.name_ar or exp_acc.name,
-            debit=payslip.net_pay,
+            debit=gross,
             credit=Decimal("0.0"),
-            description="Salaries Expense"
+            description="Salaries Expense (gross)",
         ),
         JournalEntryLine(
             journal_entry_id=je.id,
-            account_id=liab_acc.id,
-            account_code=liab_acc.code,
-            account_name=liab_acc.name_ar or liab_acc.name,
+            account_id=pay_acc.id,
+            account_code=pay_acc.code,
+            account_name=pay_acc.name_ar or pay_acc.name,
             debit=Decimal("0.0"),
             credit=payslip.net_pay,
-            description="Accrued Salaries Payable"
+            description="Accrued Salaries Payable (net)",
+        ),
+    ]
+    if deductions > 0:
+        ded_acc = await get_default_account(session, AccountMappingKey.PAYROLL_DEDUCTIONS_PAYABLE)
+        lines.append(
+            JournalEntryLine(
+                journal_entry_id=je.id,
+                account_id=ded_acc.id,
+                account_code=ded_acc.code,
+                account_name=ded_acc.name_ar or ded_acc.name,
+                debit=Decimal("0.0"),
+                credit=deductions,
+                description="Payroll deductions withheld",
+            )
         )
-    ])
+    session.add_all(lines)

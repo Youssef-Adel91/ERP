@@ -80,6 +80,10 @@ async def create_cheque(
         created_by=current_user.id,
     )
     db.add(cheque)
+    await db.flush()
+    from app.modules.finance.services.cheque_service import post_cheque_registration
+
+    await post_cheque_registration(db, cheque)
     await db.commit()
     await db.refresh(cheque)
     return ChequeResponse.model_validate(cheque)
