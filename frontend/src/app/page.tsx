@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { SUPPORT_EMAIL } from "@/lib/brand";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Wallet, TrendingUp, Package, Users, Plane, Coffee, Car, ShieldCheck,
   ArrowLeft, CheckCircle2, Mail, Receipt, Store, Building2, CreditCard,
-  PackageCheck, FileSpreadsheet, Download, Printer, CalendarClock, Languages,
+  PackageCheck, CalendarClock, Languages,
   Layers, BookCheck, Bot,
 } from "lucide-react";
 
@@ -26,6 +27,14 @@ const modules = [
   { icon: CreditCard, title: "الاشتراك والفوترة", desc: "خطط الاشتراك وفواتير العملاء الدورية.", badge: null },
 ];
 
+const sectors = [
+  { icon: Layers, title: "شركات الخدمات", desc: "محاسبة · موارد بشرية · اشتراكات" },
+  { icon: Car, title: "تأجير السيارات", desc: "أسطول · عقود · فوترة" },
+  { icon: Plane, title: "السياحة والسفر", desc: "حجوزات · تسعير · عملاء" },
+  { icon: Coffee, title: "المطاعم والفنادق", desc: "حجوزات · نقاط بيع · فوترة" },
+  { icon: Store, title: "التجزئة والتجارة", desc: "POS · مخزون · فاتورة إلكترونية" },
+];
+
 const facts = [
   { value: "29", label: "تقريرًا جاهزًا بالشات" },
   { value: "Excel · CSV · PDF", label: "تنزيل أي تقرير" },
@@ -41,86 +50,6 @@ const reasons = [
   { icon: Layers, title: "اشترك فيما تحتاجه", desc: "ابدأ بالمحاسبة والمبيعات، وأضف المخزون أو الموارد البشرية أو الفروع لما تكبر." },
   { icon: Languages, title: "مصمم للسوق المصري", desc: "ضريبة القيمة المضافة، الشيكات، الأجور، والفاتورة الإلكترونية — مش نظام عام محتاج تعديل." },
 ];
-
-// ── Product preview (browser frame with a real-shaped report answer) ──────────
-function ProductPreview() {
-  const rows = [
-    { c: "شركة الأمل للتجارة", d: "١٠ أكتوبر", a: "12,500.00" },
-    { c: "مؤسسة النور", d: "٢٢ أكتوبر", a: "8,200.00" },
-    { c: "متجر الحرية", d: "٢ نوفمبر", a: "4,750.00" },
-  ];
-  return (
-    <div className="relative" dir="rtl">
-      <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-primary-fixed/70" aria-hidden />
-      <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-[0_28px_60px_-28px_rgba(11,20,112,0.35)] overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-outline-variant bg-surface-container-low">
-          <div className="flex gap-1.5" aria-hidden>
-            <span className="w-2.5 h-2.5 rounded-full bg-outline-variant" />
-            <span className="w-2.5 h-2.5 rounded-full bg-outline-variant" />
-            <span className="w-2.5 h-2.5 rounded-full bg-outline-variant" />
-          </div>
-          <div className="flex-1 text-center text-[11px] text-on-surface-variant bg-surface-container-lowest border border-outline-variant rounded-md py-1" dir="ltr">
-            trustcore.app/dashboard/assistant
-          </div>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            {[["مستحق من العملاء", "25,450"], ["مستحق للموردين", "18,900"], ["رصيد النقدية", "61,300"]].map(([k, v]) => (
-              <div key={k} className="rounded-lg bg-surface-container px-3 py-2">
-                <p className="text-[10px] text-on-surface-variant">{k}</p>
-                <p className="text-sm font-bold text-on-surface tabular-nums" dir="ltr">{v}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex justify-start">
-            <div className="bg-primary text-on-primary text-[13px] rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[80%]">
-              إيه أعمار الديون عندي؟
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <div className="w-full rounded-2xl rounded-bl-sm border border-outline-variant bg-surface-container-lowest p-3 space-y-2.5">
-              <p className="text-[13px] text-on-surface leading-relaxed">
-                إجمالي المستحق على العملاء <b>25,450 ج.م</b>، منها 8,200 متأخرة أكتر من 30 يوم.
-              </p>
-              <div className="rounded-lg border border-outline-variant overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-1.5 bg-surface-container-low border-b border-outline-variant">
-                  <span className="text-[12px] font-semibold text-on-surface">أعمار الديون (العملاء)</span>
-                  <div className="flex gap-1">
-                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-primary text-on-primary"><FileSpreadsheet className="w-3 h-3" />Excel</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant"><Download className="w-3 h-3" />CSV</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant"><Printer className="w-3 h-3" />PDF</span>
-                  </div>
-                </div>
-                <table className="w-full text-[12px]">
-                  <thead>
-                    <tr className="text-on-surface-variant">
-                      <th className="text-right font-medium px-3 py-1.5">العميل</th>
-                      <th className="text-right font-medium px-3 py-1.5">الاستحقاق</th>
-                      <th className="text-right font-medium px-3 py-1.5">المتبقي</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.c} className="border-t border-outline-variant/60">
-                        <td className="px-3 py-1.5 text-on-surface">{r.c}</td>
-                        <td className="px-3 py-1.5 text-on-surface-variant">{r.d}</td>
-                        <td className="px-3 py-1.5 text-on-surface tabular-nums" dir="ltr">{r.a}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <p className="text-[11px] text-on-surface-variant text-center mt-3">مثال بأرقام تجريبية</p>
-    </div>
-  );
-}
 
 // ── Navbar ───────────────────────────────────────────────────────────────────
 function Logo({ small = false }: { small?: boolean }) {
@@ -170,43 +99,62 @@ function Navbar() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-surface-container-lowest overflow-x-hidden font-sans text-on-surface" dir="rtl">
+    <div className="min-h-screen bg-[#FBF8F3] dark:bg-surface-container-lowest overflow-x-hidden font-sans text-on-surface" dir="rtl">
       <Navbar />
 
-      {/* ── HERO ───────────────────────────────────────────────────────────── */}
-      <section className="pt-28 pb-20 md:pt-36 md:pb-28">
-        <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-14 items-center">
-          <div>
-            <p className="text-sm font-semibold text-primary mb-5">نظام إدارة متكامل للتاجر المصري</p>
-            <h1 className="text-4xl md:text-6xl font-black leading-[1.15] tracking-tight mb-6">
-              المرجع الرقمي
-              <br />
-              <span className="text-primary">للتاجر المصري</span>
+      {/* ── HERO (photo + systems marketplace) ──────────────────────────────── */}
+      <section className="relative isolate overflow-hidden bg-[#00071C] pt-28 md:pt-32 pb-20 text-white">
+        <div className="absolute inset-x-0 top-0 h-[760px] -z-10" aria-hidden>
+          <Image src="/hero-bg.jpg" alt="" fill priority sizes="100vw" className="object-cover object-left" />
+          <div className="absolute inset-0 bg-gradient-to-l from-[#00071C] via-[#00071C]/75 to-[#00071C]/30 lg:via-[#00071C]/45 lg:to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#00071C] to-transparent" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="max-w-2xl pb-14 md:pb-20">
+            <p className="inline-block text-sm font-semibold text-[#C7D0FF] bg-white/10 rounded-full px-4 py-1.5 mb-6">
+              منصة أنظمة متكاملة لأي نشاط تجاري
+            </p>
+            <h1 className="text-4xl md:text-6xl font-black leading-[1.2] tracking-tight mb-6">
+              كل أنظمة شغلك في مكان واحد
             </h1>
-            <p className="text-lg md:text-xl text-on-surface-variant leading-relaxed max-w-xl mb-9">
-              المحاسبة والمبيعات والمخزون والموارد البشرية في مكان واحد. واسأل المساعد بالعربي عن أي تقرير، وحمّله Excel أو PDF في ثواني.
+            <p className="text-lg md:text-xl text-white/75 leading-relaxed mb-9">
+              محاسبة، مخزون، فاتورة إلكترونية، موارد بشرية، مطاعم وفنادق، سياحة وتأجير سيارات. اختار الأنظمة اللي محتاجها دلوقتي، وزوّد غيرها وقت ما تكبر.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
               <Link href="/register" className="inline-flex items-center justify-center gap-2 bg-primary text-on-primary font-bold text-base px-8 py-3.5 rounded-xl hover:bg-primary-container transition-colors">
                 ابدأ مجانًا
                 <ArrowLeft className="w-5 h-5" />
               </Link>
-              <a href="#ai" className="inline-flex items-center justify-center gap-2 border border-outline-variant text-on-surface font-semibold text-base px-8 py-3.5 rounded-xl hover:bg-surface-container transition-colors">
-                شوف المساعد الذكي
+              <a href="#modules" className="inline-flex items-center justify-center gap-2 border border-white/35 text-white font-semibold text-base px-8 py-3.5 rounded-xl hover:bg-white/10 transition-colors">
+                استعرض الأنظمة
               </a>
             </div>
-            <p className="text-sm text-on-surface-variant flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-primary" />
+            <p className="text-sm text-white/65 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#9AA8FF]" />
               بدون بطاقة ائتمان
             </p>
           </div>
 
-          <ProductPreview />
+          <div id="modules" className="scroll-mt-24 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {modules.map((mod) => (
+              <div key={mod.title} className="rounded-2xl border border-white/15 bg-white/[0.07] backdrop-blur-sm p-5 hover:bg-white/[0.11] transition-colors">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center">
+                    <mod.icon className="w-5 h-5 text-[#C7D0FF]" />
+                  </div>
+                  <Link href="/register" className="text-[13px] font-bold bg-white/15 hover:bg-white/25 rounded-full px-3 py-1 transition-colors">+ أضف</Link>
+                </div>
+                <h3 className="font-bold text-lg mb-1">{mod.title}</h3>
+                <p className="text-sm text-white/65 leading-relaxed">{mod.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* ── FACTS ──────────────────────────────────────────────────────────── */}
-      <section className="border-y border-outline-variant bg-surface-container-low">
+      <section className="border-y border-outline-variant bg-[#F3ECE1] dark:bg-surface-container-low">
         <div className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
           {facts.map((f) => (
             <div key={f.label}>
@@ -217,24 +165,19 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── MODULES ────────────────────────────────────────────────────────── */}
-      <section id="modules" className="py-24">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-2xl mb-14">
-            <h2 className="text-3xl md:text-4xl font-black mb-4">كل اللي تجارتك محتاجاه، وحدات تضيفها وقت ما تحتاج</h2>
-            <p className="text-lg text-on-surface-variant">ابدأ بالأساسيات، وزوّد لما تكبر. بدون تعقيدات.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {modules.map((mod) => (
-              <div key={mod.title} className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 hover:border-primary/40 hover:shadow-md transition-all">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-11 h-11 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
-                    <mod.icon className="w-5 h-5" />
-                  </div>
-                  {mod.badge && <span className="text-[11px] font-bold bg-primary-fixed text-primary px-2 py-0.5 rounded-full">{mod.badge}</span>}
+      {/* ── SECTORS ─────────────────────────────────────────────────────────── */}
+      <section id="sectors" className="py-20">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <h2 className="text-3xl md:text-4xl font-black mb-3">مناسب لنشاطك، أيًا كان</h2>
+          <p className="text-lg text-on-surface-variant mb-12">كل قطاع بيبدأ بمجموعة أنظمة جاهزة، وتقدر تعدّلها في أي وقت.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-start">
+            {sectors.map((sec) => (
+              <div key={sec.title} className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-5">
+                <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center mb-4">
+                  <sec.icon className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-bold mb-1.5">{mod.title}</h3>
-                <p className="text-sm text-on-surface-variant leading-relaxed">{mod.desc}</p>
+                <h3 className="font-bold text-lg mb-1">{sec.title}</h3>
+                <p className="text-sm text-on-surface-variant">{sec.desc}</p>
               </div>
             ))}
           </div>
@@ -242,7 +185,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── AI ─────────────────────────────────────────────────────────────── */}
-      <section id="ai" className="py-24 bg-surface-container-low">
+      <section id="ai" className="py-24 bg-[#F3ECE1] dark:bg-surface-container-low">
         <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-14 items-center">
           <div>
             <p className="text-sm font-semibold text-primary mb-4">المساعد الذكي</p>
@@ -299,7 +242,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── PRICING ────────────────────────────────────────────────────────── */}
-      <section id="pricing" className="py-24 bg-surface-container-low">
+      <section id="pricing" className="py-24 bg-[#F3ECE1] dark:bg-surface-container-low">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-center mb-14">
             <h2 className="text-3xl md:text-4xl font-black mb-4">ابدأ مجانًا، وادفع لما تكبر</h2>
