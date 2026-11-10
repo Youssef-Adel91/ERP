@@ -657,3 +657,8 @@ REPORT_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+# Phase C: ~15 more reports (statements, aging, sales, stock, payroll) — see extra_reports.py
+from app.modules.reporting.extra_reports import EXTRA_REPORTS  # noqa: E402
+
+REPORT_REGISTRY.update(EXTRA_REPORTS)

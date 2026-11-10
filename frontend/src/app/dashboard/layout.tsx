@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   Sparkles,
+  Bot,
   Sun,
   Moon,
   ChevronLeft,
@@ -81,6 +82,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/dashboard", label: "لوحة القيادة", icon: LayoutDashboard },
       { href: "/dashboard/insights", label: "رؤى الذكاء الاصطناعي", icon: Sparkles },
+      { href: "/dashboard/assistant", label: "المساعد الذكي والتقارير", icon: Bot },
     ],
   },
   {
