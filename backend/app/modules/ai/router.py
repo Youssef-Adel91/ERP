@@ -227,3 +227,111 @@ async def reports_export(
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{stem}.{body.format}"', "Access-Control-Expose-Headers": "Content-Disposition"},
     )
+
+
+# ── Scheduled e-mailed reports (OWNER/ADMIN only) ────────────────────────────
+
+from datetime import date as _date  # noqa: E402
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+from pydantic import Field as _Field  # noqa: E402
+from sqlalchemy import select as _select  # noqa: E402
+
+from app.modules.reporting import schedules as _sch  # noqa: E402
+
+
+class ScheduleCreate(_BaseModel):
+    name: str = _Field(min_length=1, max_length=200)
+    report_name: str
+    params: dict = _Field(default_factory=dict)
+    period: str = "none"
+    frequency: str = "weekly"
+    file_format: str = "xlsx"
+    recipients: list[str]
+    start_on: _date | None = None
+
+
+def _require_admin(request: Request) -> None:
+    if not ({"OWNER", "ADMIN"} & set(_roles(request))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only OWNER/ADMIN may manage report schedules.")
+
+
+@router.get("/schedules", summary="List scheduled e-mailed reports")
+async def list_schedules(request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    await _sch.ensure_table(db)
+    rows = (await db.execute(_select(_sch.ReportSchedule).where(_sch.ReportSchedule.deleted_at.is_(None)).order_by(_sch.ReportSchedule.created_at.desc()))).scalars().all()
+    await db.commit()
+    return {"schedules": [_sch.serialize(r) for r in rows], "smtp_configured": _sch.email_sender.is_configured()}
+
+
+@router.post("/schedules", status_code=status.HTTP_201_CREATED, summary="Schedule a report to be e-mailed")
+async def create_schedule(body: ScheduleCreate, request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    _authorise(body.report_name, request)
+    err = _sch.validate_spec(body.report_name, body.frequency, body.period, body.file_format, body.recipients)
+    if err:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=err)
+    await _sch.ensure_table(db)
+    row = _sch.ReportSchedule(
+        name=body.name.strip(),
+        report_name=body.report_name,
+        params=body.params,
+        period=body.period,
+        frequency=body.frequency,
+        file_format=body.file_format,
+        recipients=[r.strip() for r in body.recipients],
+        next_run_on=body.start_on or _date.today(),
+        created_by=current_user.id,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return _sch.serialize(row)
+
+
+@router.patch("/schedules/{schedule_id}/toggle", summary="Pause / resume a schedule")
+async def toggle_schedule(schedule_id: str, request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    sid = _sch.parse_id(schedule_id)
+    row = await db.get(_sch.ReportSchedule, sid) if sid else None
+    if row is None or row.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+    row.is_active = not row.is_active
+    await db.commit()
+    return _sch.serialize(row)
+
+
+@router.delete("/schedules/{schedule_id}", summary="Delete a schedule")
+async def delete_schedule(schedule_id: str, request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    from datetime import UTC, datetime
+
+    sid = _sch.parse_id(schedule_id)
+    row = await db.get(_sch.ReportSchedule, sid) if sid else None
+    if row is None or row.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+    row.deleted_at = datetime.now(UTC)
+    row.is_active = False
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@router.post("/schedules/{schedule_id}/run-now", summary="Send a schedule right now (test)")
+async def run_schedule_now(schedule_id: str, request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    sid = _sch.parse_id(schedule_id)
+    row = await db.get(_sch.ReportSchedule, sid) if sid else None
+    if row is None or row.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+    result = await _sch.run_schedule(db, row, str(current_user.tenant_id))
+    await db.commit()
+    return {"status": result, "schedule": _sch.serialize(row)}
+
+
+@router.post("/schedules/run-due", summary="Run every due schedule for this tenant (cron entry point)")
+async def run_due(request: Request, current_user: CurrentUser, db: AsyncSession = Depends(get_tenant_db)) -> dict:
+    _require_admin(request)
+    results = await _sch.run_due_schedules(db, str(current_user.tenant_id))
+    await db.commit()
+    return {"ran": results}

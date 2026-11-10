@@ -7,6 +7,7 @@ import { apiClient, getApiErrorMessage, getAccessToken } from "@/lib/api-client"
 import { useAppStore } from "@/store/use-app-store";
 import { Bot, Send, Loader2, Sparkles, User as UserIcon, BookOpen, Play, Cpu, ListChecks, Trash2 } from "lucide-react";
 import { ReportTable, type ReportTableData } from "@/components/dashboard/ReportTable";
+import { ScheduleManager } from "@/components/dashboard/ScheduleManager";
 
 interface AskResponse {
   answer: string;
@@ -325,6 +326,8 @@ export default function AssistantPage() {
         )}
 
         {direct && <ReportTable table={direct.table} reportName={direct.name} params={direct.params} defaultOpen />}
+
+        <ScheduleManager report={selected ? { name: selected.name, title: selected.title } : null} />
       </aside>
     </div>
   );

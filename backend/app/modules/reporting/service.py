@@ -662,3 +662,8 @@ REPORT_REGISTRY: dict[str, dict[str, Any]] = {
 from app.modules.reporting.extra_reports import EXTRA_REPORTS  # noqa: E402
 
 REPORT_REGISTRY.update(EXTRA_REPORTS)
+
+# Phase D: payables, inventory valuation, daily brief — see more_reports.py
+from app.modules.reporting.more_reports import MORE_REPORTS  # noqa: E402
+
+REPORT_REGISTRY.update(MORE_REPORTS)

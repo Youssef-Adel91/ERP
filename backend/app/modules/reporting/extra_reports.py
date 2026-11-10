@@ -43,6 +43,21 @@ ZERO = Decimal("0")
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
+def _ar_norm_sql(col):
+    """SQL-side Arabic normalisation (hamza/ta-marbuta/ya variants) so 'امل' finds 'أمل'."""
+    expr = func.lower(col)
+    for a, b in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"), ("ى", "ي")):
+        expr = func.replace(expr, a, b)
+    return expr
+
+
+def _ar_norm_py(text: str) -> str:
+    t = text.strip().lower()
+    for a, b in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"), ("ى", "ي")):
+        t = t.replace(a, b)
+    return t
+
+
 def _f(v: Any) -> float:
     return round(float(v or 0), 2)
 
@@ -313,25 +328,48 @@ async def get_account_ledger(db: AsyncSession, account_code: str, date_from: str
 _BUCKETS = [("غير مستحقة بعد", None, 0), ("1–30 يوم", 1, 30), ("31–60 يوم", 31, 60), ("61–90 يوم", 61, 90), ("أكثر من 90 يوم", 91, 10**6)]
 
 
+CREDIT_BUCKET = "رصيد دائن (إشعارات دائنة)"
+
+
 async def get_ar_aging(db: AsyncSession) -> dict:
+    """Open receivables by age. Partial payments are netted; credit notes (negative
+    totals) are shown in their own bucket instead of corrupting the age buckets."""
+    from app.modules.sales.models.payments import SalesPayment, SalesPaymentAllocation, SalesPaymentStatus
+
     today = date.today()
     invs = (await db.execute(select(SalesInvoice).where(SalesInvoice.status == SalesInvoiceStatus.POSTED).order_by(SalesInvoice.due_date))).scalars().all()
+    paid: dict = {}
+    if invs:
+        pq = (
+            select(SalesPaymentAllocation.invoice_id, func.coalesce(func.sum(SalesPaymentAllocation.allocated_amount), ZERO))
+            .join(SalesPayment, SalesPayment.id == SalesPaymentAllocation.payment_id)
+            .where(SalesPayment.status == SalesPaymentStatus.POSTED, SalesPaymentAllocation.invoice_id.in_([i.id for i in invs]))
+            .group_by(SalesPaymentAllocation.invoice_id)
+        )
+        paid = {iid: amt for iid, amt in (await db.execute(pq)).all()}
     names = await _contact_names(db, {i.contact_id for i in invs})
     totals = {b[0]: ZERO for b in _BUCKETS}
+    totals[CREDIT_BUCKET] = ZERO
     rows = []
     for i in invs:
+        open_amt = i.grand_total - paid.get(i.id, ZERO)
+        if open_amt == 0:
+            continue
         late = (today - i.due_date).days
-        label = _BUCKETS[0][0] if late <= 0 else next(b[0] for b in _BUCKETS[1:] if b[1] <= late <= b[2])
-        totals[label] += i.grand_total
-        rows.append({"invoice": i.invoice_number, "customer": names.get(i.contact_id, "غير معروف"), "due_date": i.due_date.isoformat(), "days_late": max(late, 0), "bucket": label, "amount": _f(i.grand_total)})
-    summary = {k: _f(v) for k, v in totals.items()}
+        if open_amt < 0:
+            label, late = CREDIT_BUCKET, 0
+        else:
+            label = _BUCKETS[0][0] if late <= 0 else next(b[0] for b in _BUCKETS[1:] if b[1] <= late <= b[2])
+        totals[label] += open_amt
+        rows.append({"invoice": i.invoice_number, "customer": names.get(i.contact_id, "غير معروف"), "due_date": i.due_date.isoformat(), "days_late": max(late, 0), "bucket": label, "amount": _f(open_amt)})
+    summary = {k: _f(v) for k, v in totals.items() if k != CREDIT_BUCKET or v != 0}
     summary["الإجمالي المستحق"] = _f(sum(totals.values(), ZERO))
     return _table(
         "أعمار الديون (العملاء)",
-        [("invoice", "الفاتورة", "text"), ("customer", "العميل", "text"), ("due_date", "الاستحقاق", "date"), ("days_late", "أيام التأخير", "number"), ("bucket", "الفئة", "text"), ("amount", "المبلغ", "money")],
+        [("invoice", "الفاتورة", "text"), ("customer", "العميل", "text"), ("due_date", "الاستحقاق", "date"), ("days_late", "أيام التأخير", "number"), ("bucket", "الفئة", "text"), ("amount", "المتبقي", "money")],
         rows,
         summary,
-        "فواتير المبيعات المرحّلة غير المدفوعة",
+        "فواتير المبيعات المرحّلة مخصومًا منها المدفوعات؛ الإشعارات الدائنة في فئة مستقلة",
     )
 
 
@@ -358,23 +396,38 @@ async def get_sales_by_customer(db: AsyncSession, date_from: str | None = None, 
 
 
 async def get_top_selling_items(db: AsyncSession, date_from: str | None = None, date_to: str | None = None, limit: int = 10) -> dict:
+    """Net of returns: quantities/revenue returned in the same window are subtracted."""
+    from app.modules.sales.models.returns import SalesReturn, SalesReturnLine, SalesReturnStatus
+
     start, end = _period(date_from, date_to)
     q = (
-        select(Item.sku, Item.name, func.sum(SalesInvoiceLine.qty), func.sum(SalesInvoiceLine.line_total))
+        select(Item.id, Item.sku, Item.name, func.sum(SalesInvoiceLine.qty), func.sum(SalesInvoiceLine.line_total))
         .join(SalesInvoice, SalesInvoiceLine.invoice_id == SalesInvoice.id)
         .join(Item, Item.id == SalesInvoiceLine.item_id)
-        .where(SalesInvoice.status.in_([SalesInvoiceStatus.POSTED, SalesInvoiceStatus.PAID]), SalesInvoice.issue_date.between(start, end))
-        .group_by(Item.sku, Item.name)
-        .order_by(func.sum(SalesInvoiceLine.line_total).desc())
-        .limit(max(1, min(limit, 200)))
+        .where(SalesInvoice.status.in_([SalesInvoiceStatus.POSTED, SalesInvoiceStatus.PAID]), SalesInvoice.issue_date.between(start, end), SalesInvoice.grand_total > 0)
+        .group_by(Item.id, Item.sku, Item.name)
     )
-    rows = [{"sku": s, "item": n, "qty": _f(qty), "revenue": _f(rev)} for s, n, qty, rev in (await db.execute(q)).all()]
+    sold = {iid: [sku, name, Decimal(qty or 0), Decimal(rev or 0)] for iid, sku, name, qty, rev in (await db.execute(q)).all()}
+    rq = (
+        select(SalesReturnLine.item_id, func.sum(SalesReturnLine.qty), func.sum(SalesReturnLine.line_total))
+        .join(SalesReturn, SalesReturn.id == SalesReturnLine.return_id)
+        .where(SalesReturn.status.in_([SalesReturnStatus.RECEIVED, SalesReturnStatus.CREDITED]), SalesReturn.return_date.between(start, end))
+        .group_by(SalesReturnLine.item_id)
+    )
+    returned_total = ZERO
+    for iid, rqty, rrev in (await db.execute(rq)).all():
+        if iid in sold:
+            sold[iid][2] -= Decimal(rqty or 0)
+            sold[iid][3] -= Decimal(rrev or 0)
+            returned_total += Decimal(rrev or 0)
+    ranked = sorted((v for v in sold.values() if v[2] > 0), key=lambda v: v[3], reverse=True)[: max(1, min(limit, 200))]
+    rows = [{"sku": sku, "item": name, "qty": _f(qty), "revenue": _f(rev)} for sku, name, qty, rev in ranked]
     return _table(
         "الأصناف الأكثر مبيعًا",
-        [("sku", "الكود", "text"), ("item", "الصنف", "text"), ("qty", "الكمية", "number"), ("revenue", "الإيراد", "money")],
+        [("sku", "الكود", "text"), ("item", "الصنف", "text"), ("qty", "الكمية (صافي المرتجع)", "number"), ("revenue", "الإيراد (صافي المرتجع)", "money")],
         rows,
-        {"عدد الأصناف": len(rows), "إجمالي الإيراد": _f(sum((Decimal(str(r["revenue"])) for r in rows), ZERO))},
-        "بنود فواتير المبيعات المرحّلة/المدفوعة",
+        {"عدد الأصناف": len(rows), "إجمالي الإيراد": _f(sum((Decimal(str(r["revenue"])) for r in rows), ZERO)), "مرتجعات مخصومة": _f(returned_total)},
+        "بنود فواتير المبيعات المرحّلة/المدفوعة مخصومًا منها المرتجعات (الإشعارات الدائنة مستبعدة)",
         (start, end),
     )
 
@@ -402,7 +455,7 @@ async def get_customer_statement(db: AsyncSession, customer_name: str, date_from
     start, end = _period(date_from, date_to or None)
     if not date_from:
         start = date(2000, 1, 1)
-    c = (await db.execute(select(Contact).where(Contact.name.ilike(f"%{customer_name.strip()}%")).limit(1))).scalar_one_or_none()
+    c = (await db.execute(select(Contact).where(_ar_norm_sql(Contact.name).like(f"%{_ar_norm_py(customer_name)}%")).limit(1))).scalar_one_or_none()
     if c is None:
         return _table("كشف حساب عميل", [("note", "ملاحظة", "text")], [{"note": f"لا يوجد عميل باسم «{customer_name}»"}], {}, "جهات الاتصال")
     invs = (
@@ -411,7 +464,19 @@ async def get_customer_statement(db: AsyncSession, customer_name: str, date_from
         )
     ).scalars().all()
     rows = [{"date": i.issue_date.isoformat(), "invoice": i.invoice_number, "status": i.status.value, "total": _f(i.grand_total)} for i in invs]
-    outstanding = sum((i.grand_total for i in invs if i.status == SalesInvoiceStatus.POSTED), ZERO)
+    from app.modules.sales.models.payments import SalesPayment, SalesPaymentAllocation, SalesPaymentStatus
+
+    posted = [i for i in invs if i.status == SalesInvoiceStatus.POSTED]
+    paid: dict = {}
+    if posted:
+        pq = (
+            select(SalesPaymentAllocation.invoice_id, func.coalesce(func.sum(SalesPaymentAllocation.allocated_amount), ZERO))
+            .join(SalesPayment, SalesPayment.id == SalesPaymentAllocation.payment_id)
+            .where(SalesPayment.status == SalesPaymentStatus.POSTED, SalesPaymentAllocation.invoice_id.in_([i.id for i in posted]))
+            .group_by(SalesPaymentAllocation.invoice_id)
+        )
+        paid = {iid: amt for iid, amt in (await db.execute(pq)).all()}
+    outstanding = sum((i.grand_total - paid.get(i.id, ZERO) for i in posted), ZERO)
     return _table(
         f"كشف حساب العميل: {c.name}",
         [("date", "التاريخ", "date"), ("invoice", "الفاتورة", "text"), ("status", "الحالة", "text"), ("total", "الإجمالي", "money")],

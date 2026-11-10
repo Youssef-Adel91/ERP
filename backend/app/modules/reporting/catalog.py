@@ -47,6 +47,11 @@ REPORT_META: dict[str, dict[str, Any]] = {
     "get_customer_trust_profile": {"title": "تقييم ثقة عميل", "category": "مبيعات", "roles": SALES},
     "get_low_stock": {"title": "المخزون المنخفض", "category": "مخزون", "roles": STOCK},
     "get_stock_on_hand": {"title": "المخزون الحالي", "category": "مخزون", "roles": STOCK},
+    "get_ap_aging": {"title": "أعمار الدائنين (الموردون)", "category": "مشتريات", "roles": FIN},
+    "get_purchases_by_supplier": {"title": "المشتريات حسب المورد", "category": "مشتريات", "roles": FIN},
+    "get_supplier_statement": {"title": "كشف حساب مورد", "category": "مشتريات", "roles": FIN},
+    "get_inventory_valuation": {"title": "تقييم المخزون", "category": "مخزون", "roles": FIN},
+    "get_daily_brief": {"title": "الملخص اليومي", "category": "مالية", "roles": FIN},
     "get_payroll_summary": {"title": "ملخص الرواتب", "category": "موارد بشرية", "roles": FIN},
 }
 
@@ -130,7 +135,11 @@ def parse_period(q: str, today: date | None = None) -> tuple[str, str] | None:
 # ── intent rules (first strong match wins; order = specificity) ──────────────
 
 _RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("get_daily_brief", ("ملخص اليوم", "ملخص يومي", "الملخص اليومي", "موجز اليوم", "daily brief", "morning brief")),
     ("get_trial_balance_report", ("ميزان المراجعه", "trial balance")),
+    ("get_ap_aging", ("اعمار الدائنين", "اعمار الموردين", "ديون الموردين", "مستحق للموردين", "مستحقات الموردين", "ap aging", "payables aging")),
+    ("get_inventory_valuation", ("تقييم المخزون", "قيمه المخزون", "قيمة المخزون", "inventory valuation", "stock value")),
+    ("get_purchases_by_supplier", ("مشتريات كل مورد", "المشتريات حسب المورد", "مشتريات حسب المورد", "purchases by supplier", "اكبر الموردين")),
     ("get_balance_sheet", ("ميزانيه", "المركز المالي", "balance sheet")),
     ("get_profit_and_loss", ("قائمه الدخل", "صافي الربح", "صافي ربح", "ارباح", "ربح", "خسائر", "خساره", "profit", "p&l", "income statement", "margin", "هامش")),
     ("get_vat_summary", ("ضريبه", "ضرايب", "القيمه المضافه", "vat", "tax")),
@@ -160,6 +169,9 @@ _SUGGESTIONS = [
     "إيه الأصناف اللي مخزونها منخفض؟",
     "ملخص ضريبة القيمة المضافة هذا الشهر",
     "التدفقات النقدية آخر 3 شهور",
+    "أعمار الدائنين",
+    "تقييم المخزون",
+    "الملخص اليومي",
 ]
 
 
@@ -174,6 +186,12 @@ def route_question(q: str, roles: list[str] | set[str] | None = None) -> tuple[s
     # "كشف حساب <4-digit code>" → ledger, "كشف حساب <name>" → customer statement
     if "كشف حساب" in t or "statement" in t or "ledger" in t:
         code = re.search(r"\b(\d{4})\b", t)
+        if not code and re.search(r"(?:ال|ل)?مورد", t):
+            sname = re.sub(r"كشف حساب|statement|ledger|\b(?:ال|ل)?مورد\b|\bof\b|\bfor\b", "", t).strip(" ؟?")
+            sname = re.sub(r"(هذا|الشهر|السنه|اخر|\d+|يوم).*$", "", sname).strip()
+            if sname:
+                sp = parse_period(q)
+                return "get_supplier_statement", {"supplier_name": sname, **({"date_from": sp[0], "date_to": sp[1]} if sp else {})}
         period = parse_period(q)
         params: dict[str, Any] = {}
         if period:

@@ -35,7 +35,9 @@ async def send_email(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    attachments: list[tuple[str, bytes, str, str]] | None = None,
 ) -> bool:
+    # attachments: [(filename, data, maintype, subtype)]
     """
     Sends a single email via SMTP. Returns True on success, False on any
     failure (never raises) — callers are notification best-effort paths,
@@ -57,6 +59,8 @@ async def send_email(
     message.set_content(body_text)
     if body_html:
         message.add_alternative(body_html, subtype="html")
+    for fname, data, maintype, subtype in attachments or []:
+        message.add_attachment(data, maintype=maintype, subtype=subtype, filename=fname)
 
     try:
         await aiosmtplib.send(
