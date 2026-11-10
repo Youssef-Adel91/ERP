@@ -33,6 +33,7 @@ from uuid import uuid4
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
@@ -65,6 +66,8 @@ TestSessionLocal = async_sessionmaker(
 import app.core.db.database as _db_mod
 _db_mod.engine = test_engine
 _db_mod.AsyncSessionLocal = TestSessionLocal
+_db_mod.redis_client = _db_mod._fake_redis_singleton
+_db_mod._redis_ready = True
 
 
 @pytest_asyncio.fixture(autouse=True)
