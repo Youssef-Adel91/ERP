@@ -22,16 +22,16 @@ from app.modules.system.models import (
 
 async def cleanup(auto_confirm: bool = False) -> None:
     async with AsyncSessionLocal() as session:
-        # Find users matching ui.test.trustcore*
-        user_stmt = select(User).where(User.email.like("ui.test.trustcore%"))
+        # Find users matching ui.test.*
+        user_stmt = select(User).where(User.email.like("ui.test.%"))
         res = await session.execute(user_stmt)
         users = res.scalars().all()
 
         if not users:
-            print("No users matching 'ui.test.trustcore*' found.")
+            print("No users matching 'ui.test.*' found.")
             return
 
-        print(f"Found {len(users)} test user(s) matching 'ui.test.trustcore*':")
+        print(f"Found {len(users)} test user(s) matching 'ui.test.*':")
         tenant_ids = set()
         for u in users:
             print(f" - User: id={u.id}, email={u.email}, tenant_id={u.tenant_id}")
@@ -45,11 +45,11 @@ async def cleanup(auto_confirm: bool = False) -> None:
             t_res = await session.execute(t_stmt)
             tenants = t_res.scalars().all()
 
-        # Also find any tenants whose name or slug matches Test Co Six or ui-test-trustcore
+        # Also find any tenants whose name or slug matches Test Co or ui-test
         extra_t_stmt = select(Tenant).where(
-            (Tenant.name.like("Test Co Six%"))
-            | (Tenant.slug.like("ui-test-trustcore%"))
-            | (Tenant.slug.like("test-co-six%"))
+            (Tenant.name.like("Test Co %"))
+            | (Tenant.slug.like("ui-test-%"))
+            | (Tenant.slug.like("test-co-%"))
         )
         extra_t_res = await session.execute(extra_t_stmt)
         for t in extra_t_res.scalars().all():
@@ -63,14 +63,14 @@ async def cleanup(auto_confirm: bool = False) -> None:
 
         # Safety verification: ensure none of the tenants/users look like production/non-test
         for u in users:
-            if not u.email.startswith("ui.test.trustcore"):
+            if not u.email.startswith("ui.test."):
                 raise RuntimeError(f"ABORT: Safety check failed! Non-test user found: {u.email}")
 
         for t in tenants:
             # Check associated users
             u_check = (await session.execute(select(User).where(User.tenant_id == t.id))).scalars().all()
             for cu in u_check:
-                if not cu.email.startswith("ui.test.trustcore"):
+                if not cu.email.startswith("ui.test."):
                     raise RuntimeError(
                         f"ABORT: Tenant {t.name} has non-test user: {cu.email}! Never touch non-test tenants."
                     )
