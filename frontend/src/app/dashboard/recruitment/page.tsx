@@ -233,7 +233,7 @@ function CreateJobOrderModal({ onClose }: { onClose: () => void }) {
   const { data: sponsors } = useQuery({
     queryKey: ["recruitment-sponsors"],
     queryFn: async () => {
-      const res = await apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } });
+      const res = await apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } });
       return res.data.items;
     },
   });
@@ -273,6 +273,11 @@ function CreateJobOrderModal({ onClose }: { onClose: () => void }) {
               <option value="">اختر...</option>
               {sponsors?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+            {sponsors && sponsors.length === 0 && (
+              <p className="text-body-sm text-on-surface-variant">
+                لا توجد جهات اتصال بعد — <a href="/dashboard/contacts" className="text-primary font-semibold underline">أضف صاحب العمل من جهات الاتصال</a> أولًا.
+              </p>
+            )}
             {errors.sponsor_id && <p className="text-body-sm text-error">{errors.sponsor_id.message}</p>}
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -370,7 +375,7 @@ function MatchingPanel({ jobOrder, onClose }: { jobOrder: JobOrder; onClose: () 
           </div>
         ) : !data || data.candidates.length === 0 ? (
           <p className="text-body-sm text-on-surface-variant py-6 text-center">
-            لا يوجد مرشحون غير مرتبطين مطابقون للمهنة "{jobOrder.required_profession}" حاليًا.
+            لا يوجد مرشحون غير مرتبطين مطابقون للمهنة &quot;{jobOrder.required_profession}&quot; حاليًا.
           </p>
         ) : (
           <div className="space-y-2">

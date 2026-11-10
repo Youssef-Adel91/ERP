@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
-from app.core.security.security import require_role
+from app.core.security.security import require_role, RequireRoleForWrites
 from app.modules.cases.models.core import Case
 from app.modules.cases.models.vendor import Vendor
 from app.modules.system.dependencies import CurrentUser
@@ -39,7 +39,7 @@ from app.modules.system.models import UserRole
 from app.plugins.travel.models.document import VisaDocument
 from app.plugins.travel.models.visa import VISA_STATUS_ORDER, VisaApplication, VisaStatus
 
-router = APIRouter(prefix="/travel", tags=["Travel Plugin — Visas"])
+router = APIRouter(prefix="/travel", tags=["Travel Plugin — Visas"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 

@@ -344,3 +344,112 @@ async def get_trial_balance(
 ) -> list[TrialBalanceRow]:
     rows = await generate_trial_balance(db, as_of_date=as_of_date, include_zero_balances=include_zero_balances)
     return [TrialBalanceRow.model_validate(r) for r in rows]
+
+
+# ══════════════════════════════════════════════════════════════════
+# FAILED GL POSTINGS — visibility + retry
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/gl-postings/failed",
+    summary="List automated postings that failed to reach the ledger",
+    tags=["Accounting - GL Postings"],
+    dependencies=[_FINANCE_ROLES],
+)
+async def list_failed_gl_postings(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+) -> list[dict]:
+    from sqlalchemy import select
+
+    from app.modules.accounting.models.posting import GLPosting, GLPostingStatus
+
+    rows = (
+        await db.execute(
+            select(GLPosting)
+            .where(GLPosting.status == GLPostingStatus.FAILED)
+            .order_by(GLPosting.created_at.desc())
+            .limit(100)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "entry_kind": r.entry_kind,
+            "invoice_number": r.invoice_number,
+            "amount": float(r.amount) if r.amount is not None else None,
+            "error_type": r.error_type,
+            "error_message": r.error_message,
+            "attempts": r.attempts,
+        }
+        for r in rows
+    ]
+
+
+@router.post(
+    "/gl-postings/{posting_id}/retry",
+    summary="Retry a failed automated posting",
+    tags=["Accounting - GL Postings"],
+    dependencies=[_FINANCE_ROLES],
+)
+async def retry_failed_gl_posting(
+    posting_id: UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Re-publishes the original invoice.created payload (kept in the outbox)
+    with retry_failed=True. Idempotent: a posting that already succeeded is
+    never posted twice (UNIQUE source/kind in gl_postings)."""
+    from sqlalchemy import select
+
+    from app.core.events.event_bus import DomainEvent
+    from app.modules.accounting.events import handle_invoice_created
+    from app.modules.accounting.models.posting import GLPosting, GLPostingStatus
+    from app.modules.system.models import OutboxEvent
+
+    posting = await db.get(GLPosting, posting_id)
+    if posting is None:
+        raise HTTPException(status_code=404, detail="Posting not found")
+    if posting.status != GLPostingStatus.FAILED:
+        raise HTTPException(status_code=409, detail="Only FAILED postings can be retried")
+
+    events = (
+        await db.execute(
+            select(OutboxEvent)
+            .where(
+                OutboxEvent.tenant_id == UUID(str(current_user.tenant_id)),
+                OutboxEvent.event_type == "invoice.created",
+            )
+            .order_by(OutboxEvent.occurred_at.desc())
+            .limit(500)
+        )
+    ).scalars().all()
+
+    original: dict | None = None
+    for ev in events:
+        env = ev.payload or {}
+        inner = env.get("payload") if isinstance(env.get("payload"), dict) else env
+        if str(inner.get("source_id")) == str(posting.source_id) and (
+            inner.get("entry_type") or inner.get("entry_kind")
+        ) == posting.entry_kind:
+            original = inner
+            break
+    if original is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Original event payload not found; re-run the business action instead.",
+        )
+
+    try:
+        await handle_invoice_created(
+            DomainEvent(
+                event_type="invoice.created",
+                tenant_id=str(current_user.tenant_id),
+                payload={**original, "retry_failed": True},
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GL posting retry failed for %s", posting_id)
+        raise HTTPException(status_code=502, detail=f"Retry failed: {exc}") from exc
+    return {"status": "retried", "id": str(posting_id)}

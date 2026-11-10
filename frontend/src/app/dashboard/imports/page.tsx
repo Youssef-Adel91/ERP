@@ -51,7 +51,7 @@ export default function ImportsPage() {
     try {
       const [dRes, cRes] = await Promise.all([
         apiClient.get<Dossier[]>("/imports/dossiers"),
-        apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } }),
+        apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } }),
       ]);
       setDossiers(dRes.data);
       setContacts(cRes.data.items);

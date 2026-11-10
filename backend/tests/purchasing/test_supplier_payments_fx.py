@@ -39,6 +39,7 @@ from app.modules.purchasing.services.billing import (
     execute_three_way_match,
     post_vendor_bill,
 )
+from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.purchasing.services.payments import (
     allocate_payment,
@@ -47,6 +48,21 @@ from app.modules.purchasing.services.payments import (
 )
 from app.modules.purchasing.services.receiving import receive_goods
 from app.modules.system.models import OutboxEvent
+
+
+async def _make_supplier(session: AsyncSession, supplier_id: UUID | None = None) -> UUID:
+    sid = supplier_id or uuid4()
+    c = await session.get(Contact, sid)
+    if not c:
+        c = Contact(
+            id=sid,
+            name="Test Supplier",
+            contact_type=ContactType.SUPPLIER,
+            status=ContactStatus.ACTIVE,
+        )
+        session.add(c)
+        await session.flush()
+    return sid
 
 
 @pytest.mark.asyncio
@@ -59,7 +75,7 @@ async def test_supplier_payment_fx_loss_and_gl_bridge(db_session: AsyncSession, 
     4. Post payment -> check GL Bridge (DR AP 5000, CR Treasury 5200, DR FX Variance Expense 200).
     5. Check idempotency on duplicate event.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
     treasury_id = uuid4()
 
@@ -206,7 +222,7 @@ async def test_supplier_payment_fx_gain_and_gl_bridge(db_session: AsyncSession, 
     3. fx_gain_loss_amount = -200.0000 EGP (Realized FX Gain).
     4. Post payment -> check GL Bridge (DR AP 5000, CR Treasury 4800, CR FX Variance Expense 200).
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
     treasury_id = uuid4()
 
@@ -322,7 +338,7 @@ async def test_payment_allocation_validation_and_business_rules(db_session: Asyn
     3. Allocating the same bill twice raises PaymentAllocationError.
     4. Allocating zero or negative amount raises PaymentAllocationError.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     treasury_id = uuid4()
 
     payment = await create_supplier_payment(

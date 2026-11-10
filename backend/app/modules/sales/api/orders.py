@@ -22,11 +22,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.db.database import get_tenant_db
 from app.modules.inventory.exceptions import InsufficientStockError
+from app.core.security.security import RequireRoleForWrites
 from app.modules.sales.models.core import SalesOrder, SalesOrderStatus
 from app.modules.sales.services.orders import confirm_sales_order, create_sales_order
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/sales/orders", tags=["Sales - Orders"])
+router = APIRouter(prefix="/sales/orders", tags=["Sales - Orders"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 
 class SalesOrderLineIn(BaseModel):

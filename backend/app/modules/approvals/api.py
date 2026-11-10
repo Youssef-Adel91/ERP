@@ -58,9 +58,10 @@ from app.modules.approvals.services.exceptions import (
     IllegalStateTransitionError,
     SegregationOfDutiesError,
 )
+from app.core.security.security import RequireRole, RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/approvals", tags=["Approvals"])
+router = APIRouter(prefix="/approvals", tags=["Approvals"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING", "STAFF", "SALES"))])
 
 event_bus = get_event_bus()
 
@@ -98,7 +99,7 @@ class ApprovalRuleCreate(BaseModel):
     is_mandatory: bool = True
 
 
-@router.post("/rules", response_model=ApprovalRule, status_code=status.HTTP_201_CREATED)
+@router.post("/rules", dependencies=[Depends(RequireRole("OWNER", "ADMIN"))], response_model=ApprovalRule, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     data: ApprovalRuleCreate,
     current_user: CurrentUser,
@@ -138,7 +139,7 @@ class ApprovalRuleUpdate(BaseModel):
     is_active: bool | None = None
 
 
-@router.patch("/rules/{id}", response_model=ApprovalRule)
+@router.patch("/rules/{id}", dependencies=[Depends(RequireRole("OWNER", "ADMIN"))], response_model=ApprovalRule)
 async def update_rule(
     id: UUID,
     data: ApprovalRuleUpdate,
@@ -235,7 +236,11 @@ class ApprovalDecisionIn(BaseModel):
     comment: str | None = None
 
 
-@router.post("/requests/{id}/decide", response_model=ApprovalDecision)
+@router.post(
+    "/requests/{id}/decide",
+    dependencies=[Depends(RequireRole("OWNER", "ADMIN", "ACCOUNTING"))],
+    response_model=ApprovalDecision,
+)
 async def decide(
     id: UUID,
     data: ApprovalDecisionIn,

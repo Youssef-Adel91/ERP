@@ -42,7 +42,7 @@ class SalesInvoice(SQLModel, table=True):
     customer_id: UUID = Field(foreign_key="tenant.contacts.id", index=True)
 
     invoice_date: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
     )
     total_amount: Decimal = Field(sa_column=Column(Numeric(18, 4), nullable=False))
     status: SalesInvoiceStatus = Field(default=SalesInvoiceStatus.DRAFT)
@@ -50,7 +50,7 @@ class SalesInvoice(SQLModel, table=True):
 
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        default_factory=lambda: datetime.now(UTC),
         sa_column_kwargs={"server_default": text("now()")},
     )
 

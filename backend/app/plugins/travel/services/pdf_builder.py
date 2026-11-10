@@ -45,7 +45,7 @@ def build_booking_confirmation_pdf(
     total_sell_price: Decimal,
     total_buy_price: Decimal,
     passengers: list[dict[str, Any]] | None = None,
-    agency_name: str = "Nexus ERP — Travel Agency",
+    agency_name: str = "Trust Core — Travel Agency",
 ) -> bytes:
     """
     Generates a PDF booking confirmation and returns raw bytes.

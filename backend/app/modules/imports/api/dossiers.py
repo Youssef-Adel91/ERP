@@ -14,9 +14,10 @@ from app.modules.imports.models.core import ImportDossier, ImportExpense, Import
 from app.modules.imports.services.landed_cost import apply_landed_costs
 from app.modules.inventory.models.core import CostLayer
 from app.modules.system.dependencies import CurrentUser
+from app.core.security.security import RequireRoleForWrites
 
 
-router = APIRouter(prefix="/imports/dossiers", tags=["Imports"])
+router = APIRouter(prefix="/imports/dossiers", tags=["Imports"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING"))])
 
 class DossierCreate(BaseModel):
     dossier_number: str

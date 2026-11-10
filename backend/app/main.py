@@ -90,7 +90,7 @@ logger = structlog.get_logger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup and shutdown logic."""
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info("  Omni ERP Platform — Starting [%s]", settings.ENVIRONMENT.upper())
+    logger.info("  Trust Core Platform — Starting [%s]", settings.ENVIRONMENT.upper())
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     # ── Step 1: PostgreSQL health check ───────────────────────────────────────
@@ -113,6 +113,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("⚠️  Redis unavailable (refresh tokens disabled): %s", exc)
 
+    # ── Step 4: Reconcile orphaned provisioning tasks ─────────────────────────
+    try:
+        from app.modules.system.router import reconcile_orphaned_provisioning
+        await reconcile_orphaned_provisioning()
+    except Exception as exc:
+        logger.warning("Provisioning reconciler skipped: %s", exc)
+
     logger.info(
         "✅ EventBus handlers registered (backend=%s)", settings.EVENT_BUS_BACKEND,
     )
@@ -122,7 +129,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield  # ← Server accepts requests here
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    logger.info("Shutting down Omni ERP...")
+    logger.info("Shutting down Trust Core...")
     await engine.dispose()
     rc = await _get_redis_client()
     await rc.aclose()
@@ -143,7 +150,7 @@ def create_application() -> FastAPI:
         title=settings.PROJECT_NAME,
         version="0.1.0",
         description=(
-            "## Omni ERP — Multi-Tenant ERP & Trust Network Platform\n\n"
+            "## Trust Core — Multi-Tenant ERP & Trust Network Platform\n\n"
             "### 🚀 Quick Start\n"
             "1. `POST /api/v1/auth/register` — Register your company (no token needed)\n"
             "2. `POST /api/v1/auth/login` — Get JWT access + refresh tokens\n"
@@ -164,9 +171,9 @@ def create_application() -> FastAPI:
             "- **Event-driven**: Inventory ↔ Accounting decoupled via EventBus\n"
             "- **Neo4j-ready**: Contact models annotated for graph extraction\n"
         ),
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        openapi_url=None if settings.is_production else f"{settings.API_V1_PREFIX}/openapi.json",
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
         default_response_class=ORJSONResponse,
         lifespan=lifespan,
     )

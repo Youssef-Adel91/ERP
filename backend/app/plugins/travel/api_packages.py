@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
-from app.core.security.security import require_role
+from app.core.security.security import require_role, RequireRoleForWrites
 from app.modules.cases.models.vendor import Vendor
 from app.modules.cases.services.engine import create_case
 from app.modules.system.dependencies import CurrentUser
@@ -37,9 +37,9 @@ from app.plugins.travel.models.package import (
     component_to_booking_service,
 )
 
-router = APIRouter(prefix="/travel/packages", tags=["Travel Plugin — Packages"])
-components_router = APIRouter(prefix="/travel/components", tags=["Travel Plugin — Packages"])
-itinerary_router = APIRouter(prefix="/travel/itinerary-days", tags=["Travel Plugin — Packages"])
+router = APIRouter(prefix="/travel/packages", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
+components_router = APIRouter(prefix="/travel/components", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
+itinerary_router = APIRouter(prefix="/travel/itinerary-days", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 
 # ── Pydantic Schemas ────────────────────────────────────────────────────────
@@ -159,6 +159,7 @@ class BookFromPackageIn(BaseModel):
     travel_date_requested: date
     return_date_requested: date | None = None
     group_size: int | None = None  # defaults to package.min_pax
+    accounting_mode: str = "principal"
     notes: str | None = None
     contacts: list[dict[str, Any]] = []  # [{contact_id, role, meta}]
 
@@ -464,6 +465,7 @@ async def create_booking_from_package(
         "return_date_requested": body.return_date_requested.isoformat() if body.return_date_requested else None,
         "group_size": body.group_size or package.min_pax,
         "trip_type": "package",
+        "accounting_mode": body.accounting_mode,
         "services": services,
         "currency": package.currency,
         "notes": body.notes,

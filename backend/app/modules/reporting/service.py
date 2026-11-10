@@ -91,7 +91,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
     fields, so this can never drift from what the dashboard shows."""
     revenue = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -102,7 +102,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     receivables = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.debit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -113,7 +113,7 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     payables = (
         await db.execute(
-            select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+            select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
             .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
             .where(
                 JournalEntry.status == JournalEntryStatus.POSTED,
@@ -145,7 +145,12 @@ async def get_financial_summary(db: AsyncSession) -> dict[str, Any]:
 
     return {
         "total_revenue_egp": float(revenue),
-        "total_receivables_egp": float(receivables),
+        # A negative AR balance means customers are in credit (e.g. a return
+        # on an already-paid invoice, refund not yet paid out). Report
+        # outstanding receivables as >= 0 and surface the credit separately
+        # so neither the UI nor the LLM mis-reads a minus sign.
+        "total_receivables_egp": float(max(receivables, Decimal("0"))),
+        "customer_credit_balance_egp": float(max(-receivables, Decimal("0"))),
         "total_payables_egp": float(payables),
         "cash_balance_egp": float(cash_debit - cash_credit),
         "source": "posted journal_entries / transaction_lines (accounts 4xxx revenue, "
@@ -394,7 +399,7 @@ async def get_revenue_trend(db: AsyncSession, months: int = 6) -> dict[str, Any]
     range_end = date(end_year, end_month, 1)
 
     rows = await db.execute(
-        select(JournalEntry.entry_date, TransactionLine.credit)
+        select(JournalEntry.entry_date, TransactionLine.credit - TransactionLine.debit)
         .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == JournalEntryStatus.POSTED,
@@ -652,3 +657,8 @@ REPORT_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+# Phase C: ~15 more reports (statements, aging, sales, stock, payroll) — see extra_reports.py
+from app.modules.reporting.extra_reports import EXTRA_REPORTS  # noqa: E402
+
+REPORT_REGISTRY.update(EXTRA_REPORTS)

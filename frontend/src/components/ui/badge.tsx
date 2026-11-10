@@ -1,20 +1,19 @@
 import type { ReactNode } from "react";
 
-export type BadgeTone = "primary" | "secondary" | "tertiary" | "error" | "success" | "warning" | "neutral";
+export type BadgeTone = "primary" | "secondary" | "tertiary" | "error" | "success" | "warning" | "info" | "neutral";
 
 /**
- * Badge — status pill matching the Stitch pattern used for statuses,
- * trend indicators, and counts across all 10 design references:
- * `px-2 py-0.5 rounded text-body-sm` with a `{tone}-container/20` tint
- * background and `text-{tone}` foreground.
+ * Badge — Trust Core status pill: tinted background + matching text colour.
+ * Tones map to the design system (brand / success / warning / danger / info / ai).
  */
 const toneClasses: Record<BadgeTone, string> = {
-  primary: "bg-primary-container/20 text-primary",
-  secondary: "bg-secondary-container/20 text-secondary",
-  tertiary: "bg-tertiary-container/20 text-tertiary",
-  error: "bg-error-container/20 text-error",
+  primary: "bg-primary-fixed text-primary",
+  secondary: "bg-success-bg text-success",
+  tertiary: "bg-tertiary-fixed text-tertiary",
+  error: "bg-error-container text-error",
   success: "bg-success-bg text-success",
   warning: "bg-warning-bg text-warning",
+  info: "bg-info-bg text-info",
   neutral: "bg-surface-container text-on-surface-variant",
 };
 
@@ -29,14 +28,14 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${toneClasses[tone]} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold ${toneClasses[tone]} ${className}`}
     >
       {children}
     </span>
   );
 }
 
-/** Dot-prefixed variant — used for entity statuses (posted/draft/active/inactive) per the Stitch table pattern. */
+/** Dot-prefixed variant — used for entity statuses (posted/draft/active/inactive). */
 export function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: BadgeTone }) {
   return (
     <Badge tone={tone}>

@@ -121,7 +121,7 @@ async def login_portal(
             contact=contact,
             whatsapp_template="portal_otp_code",
             whatsapp_parameters=[{"type": "text", "text": otp_code}],
-            email_subject="رمز الدخول لبوابة العملاء — Omni ERP",
+            email_subject="رمز الدخول لبوابة العملاء — Trust Core",
             email_body_text=(
                 f"رمز الدخول لبوابة العملاء الخاص بك هو: {otp_code}\n\n"
                 "هذا الرمز صالح لمدة 5 دقائق فقط.\n"

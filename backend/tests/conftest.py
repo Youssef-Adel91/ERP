@@ -33,6 +33,7 @@ from uuid import uuid4
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
@@ -62,6 +63,12 @@ TestSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+import app.core.db.database as _db_mod
+_db_mod.engine = test_engine
+_db_mod.AsyncSessionLocal = TestSessionLocal
+_db_mod.redis_client = _db_mod._fake_redis_singleton
+_db_mod._redis_ready = True
+
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():
@@ -73,6 +80,8 @@ async def setup_database():
     from app.modules.logistics import models as _m4  # noqa: F401
     from app.modules.purchasing import models as _m5  # noqa: F401
     from app.modules.trust import models as _m7  # noqa: F401
+    from app.modules.contacts import models as _m8  # noqa: F401
+    from app.modules.sales import models as _m9  # noqa: F401
 
     async with test_engine.begin() as conn:
         conn_translated = await conn.execution_options(schema_translate_map={"tenant": None, "public": None})
@@ -220,5 +229,5 @@ def _get_admin_token() -> str:
     return create_access_token(
         user_id=TEST_ADMIN_ID,
         tenant_id=str(TEST_TENANT_ID),
-        roles=["admin"],
+        roles=["OWNER"],
     )

@@ -144,7 +144,7 @@ export default function SalesPage() {
   const { data: contacts } = useQuery({
     queryKey: ["contacts", "for-sales"],
     queryFn: async () => {
-      const res = await apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } });
+      const res = await apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } });
       return res.data.items;
     },
   });
@@ -640,6 +640,15 @@ function ReturnInvoiceModal({
     },
   });
 
+  const { data: itemList } = useQuery({
+    queryKey: ["inventory-items", "for-returns"],
+    queryFn: async () => (await apiClient.get<Item[]>("/inventory/items")).data,
+  });
+  const itemLabel = (id: string) => {
+    const it = (itemList ?? []).find((x) => x.id === id);
+    return it ? `${it.name} (${it.sku})` : `${id.slice(0, 8)}…`;
+  };
+
   const selectedLines = (detail?.lines ?? []).filter((l) => Number(returnQty[l.id]) > 0);
 
   const mutation = useMutation({
@@ -699,7 +708,7 @@ function ReturnInvoiceModal({
               {detail.lines.map((l) => (
                 <div key={l.id} className="flex items-center gap-2">
                   <span className="flex-1 text-body-sm font-data-mono" dir="ltr">
-                    {l.item_id.slice(0, 8)}… × {l.qty} @ {egp(l.unit_price)}
+                    {itemLabel(l.item_id)} × {Number(l.qty)} @ {egp(l.unit_price)}
                   </span>
                   <input
                     type="number"

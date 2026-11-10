@@ -9,6 +9,7 @@ import { AxiosError } from "axios";
 import { apiClient, pickDetail } from "@/lib/api-client";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 
 const resetPasswordSchema = z
   .object({
@@ -53,7 +54,7 @@ function ResetPasswordInner() {
       if (axiosErr.response?.status === 400 || axiosErr.response?.status === 401) {
         setErrorMsg("الرابط غير صالح أو منتهي الصلاحية، برجاء طلب رابط جديد.");
       } else {
-        setErrorMsg(pickDetail(axiosErr, axiosErr.message || "تعذر إعادة تعيين كلمة المرور، حاول مرة أخرى."));
+        setErrorMsg(pickDetail(axiosErr, axiosErr.response ? "تعذر إعادة تعيين كلمة المرور، حاول مرة أخرى." : "تعذر الاتصال بالخادم، حاول مرة أخرى بعد قليل."));
       }
     } finally {
       setIsLoading(false);
@@ -61,13 +62,7 @@ function ResetPasswordInner() {
   };
 
   return (
-    <div
-      className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "radial-gradient(#e5e7eb 0.5px, transparent 0.5px)",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[440px] animate-in fade-in duration-700 slide-in-from-bottom-4">
         {/* Logo & Header */}
         <div className="text-center mb-10">
@@ -78,7 +73,7 @@ function ResetPasswordInner() {
                 <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
               </svg>
             </div>
-            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Nexus ERP</h1>
+            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Trust Core</h1>
           </div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface-variant">
             إعادة تعيين كلمة المرور
@@ -190,7 +185,7 @@ function ResetPasswordInner() {
           </div>
         </div>
       </main>
-    </div>
+    </AuthShell>
   );
 }
 

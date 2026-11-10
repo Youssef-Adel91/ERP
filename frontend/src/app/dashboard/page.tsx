@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "@/store/use-app-store";
 import { apiClient } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
+import { getAccessToken } from "@/lib/api-client";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import ExpirationAlertsWidget from "@/components/ExpirationAlertsWidget";
@@ -25,7 +26,6 @@ import {
   Landmark,
   ArrowDownToLine,
   ArrowUpFromLine,
-  Info,
   Sparkles,
 } from "lucide-react";
 
@@ -117,37 +117,16 @@ function KpiCard({
   );
 }
 
-// ── Demo Data Notice ────────────────────────────────────────────────────────
-// Replaces three previously-fake charts (revenue trend, expense breakdown,
-// branch performance) that rendered invented numbers and fictional branch
-// names not connected to any real tenant data. Per
-// docs/Nexus_ERP_Audit_Report.md §15's own proposed remedy, a chart backed
-// by real aggregation logic (branch revenue, expense-category breakdown)
-// isn't wired up here yet — that requires business logic (branch/cost-center
-// data model) not yet confirmed to exist cleanly for this tenant. Showing an
-// honest placeholder is safer than either shipping fabricated numbers or
-// guessing at unverified aggregation logic.
-function DemoDataNotice({ title }: { title: string }) {
-  return (
-    <div className="glass-card rounded-xl p-card-padding shadow-card flex flex-col items-center justify-center text-center min-h-[200px] gap-3">
-      <div className="p-2 bg-surface-container rounded-lg">
-        <Info className="w-5 h-5 text-outline" />
-      </div>
-      <h4 className="font-headline-sm text-headline-sm">{title}</h4>
-      <p className="text-body-sm text-on-surface-variant max-w-xs">
-        هذا الرسم البياني غير متاح بعد — يحتاج ربطًا ببيانات حقيقية لم تُفعَّل في هذا الإصدار.
-      </p>
-    </div>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAppStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) {
+    // zustand's persist rehydrates asynchronously, so `user` is null on the
+    // first render after a hard refresh. Only bounce to /login when there is
+    // genuinely no session token; otherwise wait for the store to hydrate.
+    if (!user && !getAccessToken()) {
       router.push("/login");
     }
   }, [user, router]);
@@ -264,7 +243,7 @@ export default function DashboardPage() {
           <button
             onClick={handleExport}
             disabled={!metrics || exporting}
-            className="bg-white border border-outline-variant px-4 py-2 rounded-lg flex items-center gap-2 text-body-md font-medium hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-surface-container-lowest border border-outline-variant px-4 py-2 rounded-lg flex items-center gap-2 text-body-md font-medium hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {exporting ? <Loader2 className="w-4 h-4 text-outline animate-spin" /> : <FileDown className="w-4 h-4 text-outline" />}
             تصدير البيانات
@@ -345,37 +324,25 @@ export default function DashboardPage() {
             <ExpenseBreakdownChart />
           </div>
 
-          {/* ── Branch Performance ───────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-            <DemoDataNotice title="أداء الفروع الكبرى" />
-
-            {/* Update highlight card */}
-            <div className="relative rounded-xl overflow-hidden shadow-card group min-h-[200px]">
-              <div className="absolute inset-0 z-10 bg-gradient-to-l from-primary/90 to-primary-container/70 flex flex-col justify-center p-card-padding text-white">
-                <h4 className="font-headline-md text-headline-md mb-2">تحديثات النظام الجديدة</h4>
-                <p className="text-body-md opacity-90 max-w-xs mb-6">
-                  لقد قمنا بتحديث نظام إدارة المخازن ليتوافق مع معايير الفاتورة الإلكترونية المصرية الجديدة.
-                </p>
-                <Link
-                  href="/dashboard/eta"
-                  className="bg-white text-primary px-6 py-2 rounded-lg font-bold w-fit hover:bg-opacity-90 transition-all active:scale-95 text-body-md"
-                >
-                  استكشف التحديث
-                </Link>
-              </div>
-              <div
-                className="absolute inset-0 transition-transform duration-700 group-hover:scale-110"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #00288e 0%, #1e40af 40%, #440098 100%)",
-                }}
-              />
+          {/* ── E-invoicing call to action (static, factual: no fabricated figures) ── */}
+          <div className="glass-card rounded-xl shadow-card p-card-padding flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="font-headline-sm text-headline-sm mb-1">الفاتورة الإلكترونية (ETA)</h4>
+              <p className="text-body-md text-on-surface-variant max-w-xl">
+                اربط حسابك بمصلحة الضرائب المصرية وأرسل فواتيرك المرحّلة من صفحة المبيعات.
+              </p>
             </div>
+            <Link
+              href="/dashboard/eta"
+              className="bg-primary text-on-primary px-6 py-2 rounded-lg font-bold w-fit hover:opacity-90 transition-all active:scale-95 text-body-md"
+            >
+              إعدادات الفاتورة الإلكترونية
+            </Link>
           </div>
 
           {/* ── Recent Transactions Table ─────────────────────── */}
           <div className="glass-card rounded-xl shadow-card overflow-hidden">
-            <div className="p-card-padding border-b border-outline-variant flex justify-between items-center bg-white">
+            <div className="p-card-padding border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest">
               <h4 className="font-headline-sm text-headline-sm">آخر المعاملات المالية</h4>
               <Link
                 href="/dashboard/accounting"

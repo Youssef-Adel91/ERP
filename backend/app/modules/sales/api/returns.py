@@ -26,10 +26,12 @@ from app.modules.sales.services.returns import (
     create_sales_return,
     post_credit_note,
     process_sales_return,
+    refund_sales_return,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/sales/returns", tags=["Sales - Returns"])
+router = APIRouter(prefix="/sales/returns", tags=["Sales - Returns"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING','SALES'))])
 
 
 class SalesReturnLineIn(BaseModel):
@@ -143,4 +145,56 @@ async def credit_note(
         await session.rollback()
         detail = str(exc)
         code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail=detail) from exc
+
+
+class RefundReturnRequest(BaseModel):
+    amount: Decimal | None = None
+    treasury_id: UUID | None = None
+    payment_method: str = "CASH"
+    reference: str | None = None
+
+
+class RefundReturnOut(BaseModel):
+    return_id: UUID
+    return_number: str
+    refund_amount: Decimal
+    journal_entry_id: UUID
+    journal_entry_reference: str
+
+
+@router.post(
+    "/{return_id}/refund",
+    response_model=RefundReturnOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Issue a cash/bank refund for a CREDITED sales return (DR Accounts Receivable, CR Cash)",
+)
+async def refund_return(
+    return_id: UUID,
+    data: RefundReturnRequest | None = None,
+    current_user: CurrentUser = None,
+    session: AsyncSession = Depends(get_tenant_db),
+) -> RefundReturnOut:
+    req = data or RefundReturnRequest()
+    try:
+        sales_return, entry = await refund_sales_return(
+            session=session,
+            return_id=return_id,
+            amount=req.amount,
+            treasury_account_id=req.treasury_id,
+            payment_method=req.payment_method,
+            reference=req.reference,
+        )
+        await session.commit()
+        return RefundReturnOut(
+            return_id=sales_return.id,
+            return_number=sales_return.return_number,
+            refund_amount=req.amount or sales_return.grand_total,
+            journal_entry_id=entry.id,
+            journal_entry_reference=entry.reference,
+        )
+    except ValueError as exc:
+        await session.rollback()
+        detail = str(exc)
+        code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=code, detail=detail) from exc

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SUPPORT_EMAIL } from "@/lib/brand";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,6 +11,7 @@ import { useAppStore } from "@/store/use-app-store";
 import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 
 const loginSchema = z.object({
   identifier: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صحيح" }),
@@ -73,7 +75,7 @@ export default function LoginPage() {
         name: me.full_name,
         email: me.email,
         role: me.role,
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(me.full_name)}&background=00288E&color=fff`,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(me.full_name)}&background=2540F0&color=fff`,
       });
 
       router.push("/dashboard");
@@ -82,7 +84,7 @@ export default function LoginPage() {
       if (axiosErr.response?.status === 401) {
         setErrorMsg("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
       } else {
-        setErrorMsg(pickDetail(axiosErr, axiosErr.message || "تعذر تسجيل الدخول، حاول مرة أخرى."));
+        setErrorMsg(pickDetail(axiosErr, axiosErr.response ? "تعذر تسجيل الدخول، حاول مرة أخرى." : "تعذر الاتصال بالخادم، حاول مرة أخرى بعد قليل."));
       }
     } finally {
       setIsLoading(false);
@@ -90,23 +92,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "radial-gradient(#e5e7eb 0.5px, transparent 0.5px)",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[440px] animate-in fade-in duration-700 slide-in-from-bottom-4">
         {/* Logo & Header */}
         <div className="text-center mb-10">
-          <div className="flex justify-center items-center gap-3 mb-4">
+          <div className="flex justify-center items-center gap-3 mb-4 lg:hidden">
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-overlay">
               {/* Material Symbol: hub */}
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-7 h-7 fill-white">
                 <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
               </svg>
             </div>
-            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Nexus ERP</h1>
+            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Trust Core</h1>
           </div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface-variant">
             مرحباً بك مجدداً في نظام الإدارة المتكامل
@@ -144,7 +141,7 @@ export default function LoginPage() {
                     ? "border-error focus:border-error ring-1 ring-error"
                     : "border-outline-variant"
                 }`}
-                placeholder="example@nexus-erp.com"
+                placeholder="example@trustcore.app"
                 dir="ltr"
               />
               {form.formState.errors.identifier && (
@@ -281,13 +278,13 @@ export default function LoginPage() {
           </div>
 
           <div className="text-center text-on-surface-variant font-body-sm text-body-sm space-y-1">
-            <p>© {new Date().getFullYear()} Nexus ERP. جميع الحقوق محفوظة.</p>
+            <p>© {new Date().getFullYear()} Trust Core. جميع الحقوق محفوظة.</p>
             <div className="flex justify-center gap-4">
               <a href="#" className="hover:text-primary transition-colors">سياسة الخصوصية</a>
               <span className="text-outline-variant">|</span>
               <a href="#" className="hover:text-primary transition-colors">شروط الاستخدام</a>
               <span className="text-outline-variant">|</span>
-              <a href="mailto:youssefffadel555@gmail.com?subject=Nexus%20ERP%20Support" className="hover:text-primary transition-colors">الدعم الفني</a>
+              <a href={`mailto:${SUPPORT_EMAIL}?subject=Trust%20Core%20Support`} className="hover:text-primary transition-colors">الدعم الفني</a>
             </div>
           </div>
         </footer>
@@ -298,6 +295,6 @@ export default function LoginPage() {
           transform: scaleX(-1);
         }
       `}</style>
-    </div>
+    </AuthShell>
   );
 }

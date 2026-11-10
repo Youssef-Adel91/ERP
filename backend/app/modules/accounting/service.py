@@ -282,8 +282,8 @@ async def post_journal_entry(
     # type, so the router's existing exception handling (added below) covers
     # both paths identically.
     from datetime import time as _time
-    entry_start_dt = datetime.combine(entry.entry_date, _time.min)
-    entry_end_dt = datetime.combine(entry.entry_date, _time.max)
+    entry_start_dt = datetime.combine(entry.entry_date, _time.min, tzinfo=UTC)
+    entry_end_dt = datetime.combine(entry.entry_date, _time.max, tzinfo=UTC)
     period_res = await db.execute(
         select(AccountingPeriod).where(
             AccountingPeriod.start_date <= entry_end_dt,
@@ -302,7 +302,7 @@ async def post_journal_entry(
         )
 
     entry.status = JournalEntryStatus.POSTED
-    entry.posted_at = datetime.now(UTC).replace(tzinfo=None)
+    entry.posted_at = datetime.now(UTC)
 
     # 1. Allocate gapless sequence number (SELECT FOR UPDATE inside this transaction)
     fiscal_year = (entry.posted_at or datetime.now(UTC)).year
@@ -378,7 +378,7 @@ async def close_period(period_id: UUID, closed_by: UUID, db: AsyncSession) -> Ac
 
     period.is_closed = True
     period.closed_by = closed_by
-    period.closed_at = datetime.now(UTC).replace(tzinfo=None)
+    period.closed_at = datetime.now(UTC)
     db.add(period)
     await db.commit()
     await db.refresh(period)

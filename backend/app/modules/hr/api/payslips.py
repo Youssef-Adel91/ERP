@@ -13,9 +13,10 @@ from sqlalchemy import select
 from app.core.db.database import get_tenant_db as get_db_session
 from app.modules.hr.models.core import Payslip, PayslipStatus
 from app.modules.hr.services.payroll import approve_payslip
+from app.core.security.security import RequireRole
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/hr/payslips", tags=["HR & Payroll"])
+router = APIRouter(prefix="/hr/payslips", tags=["HR & Payroll"], dependencies=[Depends(RequireRole('OWNER','ADMIN'))])
 
 
 @router.get("", response_model=list[Payslip])

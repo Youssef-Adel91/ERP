@@ -171,6 +171,52 @@ async def mark_failed(
     )
 
 
+async def record_failure(
+    session: AsyncSession,
+    *,
+    source_type: str,
+    source_id: uuid.UUID | str,
+    entry_kind: str,
+    exc: BaseException,
+    invoice_number: str | None = None,
+    amount: Decimal | float | None = None,
+    currency: str = "EGP",
+) -> None:
+    """Upsert a FAILED posting row for (source, kind).
+
+    The reservation made inside the failed transaction was rolled back with it,
+    so `mark_failed` (an UPDATE by id) would touch zero rows and the failure
+    would be invisible. This inserts the row if missing, and flips it to FAILED
+    otherwise — but never overwrites a POSTED row.
+    """
+    if isinstance(source_id, str):
+        source_id = uuid.UUID(source_id)
+    tbl = GLPosting.__table__
+    stmt = pg_insert(tbl).values(
+        id=uuid.uuid4(),
+        source_type=source_type,
+        source_id=source_id,
+        entry_kind=entry_kind,
+        status=GLPostingStatus.FAILED,
+        invoice_number=invoice_number,
+        amount=Decimal(str(amount)) if amount is not None else None,
+        currency=currency,
+        attempts=1,
+        error_type=type(exc).__name__,
+        error_message=str(exc)[:2000],
+    )
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_gl_postings_source_kind",
+        set_={
+            "status": GLPostingStatus.FAILED,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc)[:2000],
+        },
+        where=(tbl.c.status != GLPostingStatus.POSTED),
+    )
+    await session.execute(stmt)
+
+
 async def get_posting_status(
     session: AsyncSession,
     *,

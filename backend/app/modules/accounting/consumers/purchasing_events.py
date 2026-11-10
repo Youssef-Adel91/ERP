@@ -192,14 +192,42 @@ async def process_bill_posted(
         )
         return None
 
+    # Only bill lines linked to a goods-receipt line clear the GRNI accrual
+    # (the receipt already booked DR Inventory / CR GRNI). Lines billed with
+    # NO receipt (no PO/GRN — allowed by the UI) have no accrual to clear:
+    # debiting GRNI there left a phantom negative liability and recorded no
+    # asset/expense at all. Book those to Operating Expenses instead.
+    grni_amount = subtotal
+    unreceived_amount = Decimal("0")
+    bill_lines = payload.get("lines")
+    if bill_lines:
+        received = sum(
+            (Decimal(str(l.get("line_amount", "0"))) for l in bill_lines if l.get("grn_line_id")),
+            Decimal("0"),
+        )
+        grni_amount = min(received, subtotal)
+        unreceived_amount = subtotal - grni_amount
+
     lines = []
-    if subtotal > Decimal("0"):
+    if grni_amount > Decimal("0"):
         lines.append(
             {
                 "account_id": grni_id,
-                "debit": subtotal,
+                "debit": grni_amount,
                 "credit": Decimal("0.0000"),
                 "description": f"GRNI Clearing — Bill {bill_number}",
+            }
+        )
+    if unreceived_amount > Decimal("0"):
+        expense_id = await get_default_account_id(
+            session, AccountMappingKey.PURCHASES_EXPENSE
+        )
+        lines.append(
+            {
+                "account_id": expense_id,
+                "debit": unreceived_amount,
+                "credit": Decimal("0.0000"),
+                "description": f"Purchases (no goods receipt) — Bill {bill_number}",
             }
         )
     if tax_total > Decimal("0"):

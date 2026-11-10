@@ -69,9 +69,9 @@ async def get_dashboard_metrics(
 ) -> DashboardMetricsResponse:
     """Return aggregated financial + operational metrics for the current tenant."""
 
-    # Total Revenue (Credit on Revenue accounts ~4xxx)
+    # Net revenue (credit - debit on 4xxx: sales returns/credit notes debit revenue)
     revenue_result = await db.execute(
-        select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+        select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
         .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == JournalEntryStatus.POSTED,
@@ -80,20 +80,20 @@ async def get_dashboard_metrics(
     )
     total_revenue = revenue_result.scalar_one() or Decimal("0")
 
-    # Total Receivables (Debit on AR account 1200)
+    # Outstanding receivables (debit - credit on AR 1200: payments reduce it)
     ar_result = await db.execute(
-        select(func.coalesce(func.sum(TransactionLine.debit), Decimal("0")))
+        select(func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), Decimal("0")))
         .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == JournalEntryStatus.POSTED,
             TransactionLine.account_code == "1200",
         ),
     )
-    total_receivables = ar_result.scalar_one() or Decimal("0")
+    total_receivables = max(ar_result.scalar_one() or Decimal("0"), Decimal("0"))
 
-    # Total Payables (Credit on AP account 2100)
+    # Outstanding payables (credit - debit on AP 2100)
     ap_result = await db.execute(
-        select(func.coalesce(func.sum(TransactionLine.credit), Decimal("0")))
+        select(func.coalesce(func.sum(TransactionLine.credit - TransactionLine.debit), Decimal("0")))
         .join(JournalEntry, TransactionLine.journal_entry_id == JournalEntry.id)
         .where(
             JournalEntry.status == JournalEntryStatus.POSTED,

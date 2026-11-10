@@ -60,7 +60,7 @@ class TestGLBridge:
         assert ar_account.is_system is True
 
         revenue_account = resolved[AccountMappingKey.SALES_REVENUE.value]
-        assert revenue_account.code == "4000"
+        assert revenue_account.code == "4010"
         assert revenue_account.account_type == AccountType.REVENUE
 
         tax_account = resolved[AccountMappingKey.SALES_TAX_PAYABLE.value]
@@ -117,9 +117,9 @@ class TestGLBridge:
         assert line_map["1200"].debit == Decimal("1140.0000")
         assert line_map["1200"].credit == Decimal("0.0000")
 
-        assert "4000" in line_map  # Sales Revenue
-        assert line_map["4000"].credit == Decimal("1000.0000")
-        assert line_map["4000"].debit == Decimal("0.0000")
+        assert "4010" in line_map  # Sales Revenue
+        assert line_map["4010"].credit == Decimal("1000.0000")
+        assert line_map["4010"].debit == Decimal("0.0000")
 
         assert "2200" in line_map  # Sales Tax Payable
         assert line_map["2200"].credit == Decimal("140.0000")
@@ -192,7 +192,7 @@ class TestGLBridge:
 
         line_map = {line.account_code: line for line in entry.lines}
         assert line_map["1200"].credit == Decimal("228.0000")  # CR AR
-        assert line_map["4000"].debit == Decimal("200.0000")   # DR Revenue Reversal
+        assert line_map["4010"].debit == Decimal("200.0000")   # DR Revenue Reversal
         assert line_map["2200"].debit == Decimal("28.0000")    # DR Tax Reversal
 
         # Idempotency check

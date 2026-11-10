@@ -25,6 +25,7 @@ from app.modules.accounting.services.journal import create_journal_entry
 from app.modules.accounting.services.mappings import (
     AccountMappingKey,
     get_default_account_id,
+    resolve_default_accounts,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,9 +86,17 @@ async def process_invoice_posted(
         )
         return existing_entry
 
-    ar_id = await get_default_account_id(session, AccountMappingKey.ACCOUNTS_RECEIVABLE)
-    revenue_id = await get_default_account_id(session, AccountMappingKey.SALES_REVENUE)
-    tax_id = await get_default_account_id(session, AccountMappingKey.SALES_TAX_PAYABLE)
+    accounts = await resolve_default_accounts(
+        session,
+        [
+            AccountMappingKey.ACCOUNTS_RECEIVABLE,
+            AccountMappingKey.SALES_REVENUE,
+            AccountMappingKey.SALES_TAX_PAYABLE,
+        ],
+    )
+    ar_id = accounts[AccountMappingKey.ACCOUNTS_RECEIVABLE.value].id
+    revenue_id = accounts[AccountMappingKey.SALES_REVENUE.value].id
+    tax_id = accounts[AccountMappingKey.SALES_TAX_PAYABLE.value].id
 
     grand_total = abs(Decimal(str(payload.get("grand_total", "0"))))
     subtotal = abs(Decimal(str(payload.get("subtotal", "0"))))
@@ -188,9 +197,17 @@ async def process_credit_note_posted(
         )
         return existing_entry
 
-    ar_id = await get_default_account_id(session, AccountMappingKey.ACCOUNTS_RECEIVABLE)
-    revenue_id = await get_default_account_id(session, AccountMappingKey.SALES_REVENUE)
-    tax_id = await get_default_account_id(session, AccountMappingKey.SALES_TAX_PAYABLE)
+    accounts = await resolve_default_accounts(
+        session,
+        [
+            AccountMappingKey.ACCOUNTS_RECEIVABLE,
+            AccountMappingKey.SALES_REVENUE,
+            AccountMappingKey.SALES_TAX_PAYABLE,
+        ],
+    )
+    ar_id = accounts[AccountMappingKey.ACCOUNTS_RECEIVABLE.value].id
+    revenue_id = accounts[AccountMappingKey.SALES_REVENUE.value].id
+    tax_id = accounts[AccountMappingKey.SALES_TAX_PAYABLE.value].id
 
     grand_total = abs(Decimal(str(payload.get("grand_total", "0"))))
     subtotal = abs(Decimal(str(payload.get("subtotal", "0"))))

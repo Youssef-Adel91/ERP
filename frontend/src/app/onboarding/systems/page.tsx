@@ -108,7 +108,7 @@ export default function OnboardingSystemsPage() {
     <div
       className="min-h-screen bg-surface p-gutter"
       style={{
-        backgroundImage: "radial-gradient(#e5e7eb 0.5px, transparent 0.5px)",
+        backgroundImage: "none",
         backgroundSize: "24px 24px",
       }}
     >
@@ -121,7 +121,7 @@ export default function OnboardingSystemsPage() {
                 <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z" />
               </svg>
             </div>
-            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Nexus ERP</h1>
+            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Trust Core</h1>
           </div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">
             أهلاً بيك! انهي أنظمة محتاجها؟

@@ -16,6 +16,15 @@ from app.core.db.database import _get_redis_client
 
 logger = logging.getLogger(__name__)
 
+# Expose module-level variable for unit test patching (e.g. test_security_limits)
+redis_client = None
+
+
+async def _get_rc():
+    if redis_client is not None:
+        return redis_client
+    return await _get_redis_client()
+
 class RateLimiterMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, max_requests: int = 300, window_seconds: int = 60):
         super().__init__(app)
@@ -77,7 +86,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         try:
             # Increment the counter for this window
             # Use pipeline to ensure atomic execution and set TTL
-            rc = await _get_redis_client()
+            rc = await _get_rc()
             async with rc.pipeline(transaction=True) as pipe:
                 pipe.incr(redis_key)
                 pipe.expire(redis_key, window_seconds)

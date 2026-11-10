@@ -41,10 +41,11 @@ from app.modules.pos.models import CashShift, PosSale, ShiftStatus
 from app.modules.sales.models.invoice import SalesInvoice, SalesInvoiceStatus
 from app.modules.sales.services.invoicing import create_adhoc_invoice, post_invoice
 from app.modules.system.dependencies import CurrentUser
+from app.core.security.security import RequireRoleForWrites
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/pos", tags=["Point of Sale"])
+router = APIRouter(prefix="/pos", tags=["Point of Sale"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 WALK_IN_CONTACT_NAME = "عميل نقدي (Walk-in Customer)"
 
@@ -316,7 +317,11 @@ async def checkout(
         try:
             invoice = await create_adhoc_invoice(session, contact_id=contact_id, lines=line_dicts)
             await session.flush()
-            invoice = await post_invoice(session=session, invoice_id=invoice.id)
+            invoice = await post_invoice(
+                session=session,
+                invoice_id=invoice.id,
+                tenant_id=current_user.tenant_id,
+            )
         except ValueError as exc:
             await session.rollback()
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

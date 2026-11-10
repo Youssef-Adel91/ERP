@@ -181,7 +181,7 @@ async def create_purchase_order(
 async def confirm_purchase_order(
     session: AsyncSession,
     po_id: UUID | str,
-    requested_by: UUID,
+    requested_by: UUID | None = None,
 ) -> PurchaseOrder:
     """
     Transitions a PurchaseOrder from DRAFT or APPROVED state to CONFIRMED.

@@ -29,9 +29,10 @@ from app.modules.sales.services.payments import (
     create_sales_payment,
     post_sales_payment,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/sales/payments", tags=["Sales - Customer Payments"])
+router = APIRouter(prefix="/sales/payments", tags=["Sales - Customer Payments"], dependencies=[Depends(RequireRoleForWrites('OWNER','ADMIN','ACCOUNTING','SALES'))])
 
 
 class PaymentAllocationIn(BaseModel):

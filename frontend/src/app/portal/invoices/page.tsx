@@ -36,6 +36,9 @@ interface Invoice {
   lines?: InvoiceLine[];
 }
 
+// Flip when per-merchant online payment (backend /portal/invoices/{id}/pay) is implemented.
+const ONLINE_PAYMENT_ENABLED = false;
+
 interface PaymentIntent {
   intent_id: string;
   checkout_url: string;
@@ -233,6 +236,7 @@ export default function PortalInvoicesPage() {
                       </div>
                     )}
 
+                    {ONLINE_PAYMENT_ENABLED ? (
                     <button
                       type="button"
                       onClick={() => handlePay(inv.id)}
@@ -254,6 +258,9 @@ export default function PortalInvoicesPage() {
                         </>
                       )}
                     </button>
+                    ) : (
+                      <p className="text-body-sm text-on-surface-variant">للسداد، تواصل مع التاجر مباشرة.</p>
+                    )}
                   </div>
                 )}
               </div>

@@ -32,11 +32,17 @@ class AccountMappingKey(str, Enum):
     INPUT_VAT_RECEIVABLE = "INPUT_VAT_RECEIVABLE"
     LANDED_COST_CLEARING = "LANDED_COST_CLEARING"
     CASH_AND_BANKS = "CASH_AND_BANKS"
+    NOTES_RECEIVABLE = "NOTES_RECEIVABLE"
+    NOTES_PAYABLE = "NOTES_PAYABLE"
+    SALARIES_EXPENSE = "SALARIES_EXPENSE"
+    SALARIES_PAYABLE = "SALARIES_PAYABLE"
+    PAYROLL_DEDUCTIONS_PAYABLE = "PAYROLL_DEDUCTIONS_PAYABLE"
     CASH_WITH_CARRIER = "CASH_WITH_CARRIER"
     FX_VARIANCE_EXPENSE = "FX_VARIANCE_EXPENSE"
     SHIPPING_EXPENSE = "SHIPPING_EXPENSE"
     COD_FEE_EXPENSE = "COD_FEE_EXPENSE"
     RETURN_FEE_EXPENSE = "RETURN_FEE_EXPENSE"
+    PURCHASES_EXPENSE = "PURCHASES_EXPENSE"
 
 
 # Bug fix (live-reproduced, 20 Sep 2026): these codes used to be disjoint
@@ -87,6 +93,12 @@ DEFAULT_ACCOUNT_CONFIGS: dict[AccountMappingKey, dict[str, Any]] = {
         "name_ar": "فروقات المخزون",
         "account_type": AccountType.EXPENSE,
     },
+    AccountMappingKey.PURCHASES_EXPENSE: {
+        "code": "5100",
+        "name": "Operating Expenses",
+        "name_ar": "المصروفات التشغيلية",
+        "account_type": AccountType.EXPENSE,
+    },
     AccountMappingKey.GRNI_ACCRUAL: {
         "code": "2110",
         "name": "GRNI Accrual",
@@ -109,6 +121,36 @@ DEFAULT_ACCOUNT_CONFIGS: dict[AccountMappingKey, dict[str, Any]] = {
         "code": "2120",
         "name": "Landed Cost Clearing",
         "name_ar": "مصاريف الشحن والاستيراد المعلقة",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.SALARIES_EXPENSE: {
+        "code": "5200",
+        "name": "Salaries & Wages Expense",
+        "name_ar": "مصروف الرواتب والأجور",
+        "account_type": AccountType.EXPENSE,
+    },
+    AccountMappingKey.SALARIES_PAYABLE: {
+        "code": "2120",
+        "name": "Accrued Salaries Payable",
+        "name_ar": "رواتب مستحقة الدفع",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.PAYROLL_DEDUCTIONS_PAYABLE: {
+        "code": "2130",
+        "name": "Payroll Deductions Payable",
+        "name_ar": "استقطاعات الرواتب المستحقة (تأمينات/ضرائب)",
+        "account_type": AccountType.LIABILITY,
+    },
+    AccountMappingKey.NOTES_RECEIVABLE: {
+        "code": "1150",
+        "name": "Notes Receivable (Cheques)",
+        "name_ar": "أوراق القبض (شيكات تحت التحصيل)",
+        "account_type": AccountType.ASSET,
+    },
+    AccountMappingKey.NOTES_PAYABLE: {
+        "code": "2150",
+        "name": "Notes Payable (Cheques)",
+        "name_ar": "أوراق الدفع (شيكات صادرة)",
         "account_type": AccountType.LIABILITY,
     },
     AccountMappingKey.CASH_AND_BANKS: {
@@ -160,6 +202,14 @@ def _normalize_key(key: str | AccountMappingKey) -> AccountMappingKey:
         raise KeyError(f"Unsupported accounting mapping key: '{key}'") from exc
 
 
+def _get_session_account_cache(session: AsyncSession) -> dict[str, Account]:
+    cache = session.info.get("_default_account_cache")
+    if cache is None:
+        cache = {}
+        session.info["_default_account_cache"] = cache
+    return cache
+
+
 async def get_default_account(
     session: AsyncSession,
     mapping_key: str | AccountMappingKey,
@@ -168,11 +218,15 @@ async def get_default_account(
     Resolve and return the default Account for a given mapping key.
 
     If the account does not already exist in the database (by code), it will be
-    created, added to the session, and flushed.
+    created, added to the session, and flushed. Caches resolved accounts in session.info.
     """
     norm_key = _normalize_key(mapping_key)
     config = DEFAULT_ACCOUNT_CONFIGS[norm_key]
     code = config["code"]
+
+    cache = _get_session_account_cache(session)
+    if code in cache:
+        return cache[code]
 
     stmt = select(Account).where(Account.code == code)
     result = await session.execute(stmt)
@@ -195,6 +249,9 @@ async def get_default_account(
         session.add(account)
         await session.flush()
 
+    cache[code] = account
+    session.info.setdefault("_account_cache_by_id", {})[account.id] = account
+    session.info.setdefault("_account_cache_by_code", {})[account.code] = account
     return account
 
 
@@ -220,9 +277,59 @@ async def resolve_default_accounts(
     session: AsyncSession,
     keys: list[str | AccountMappingKey],
 ) -> dict[str, Account]:
-    """Resolve multiple default accounts in a single call, returning a dictionary mapped by key string."""
+    """Resolve multiple default accounts in a single batch query, returning a dictionary mapped by key string."""
+    cache = _get_session_account_cache(session)
+    code_cache = session.info.setdefault("_account_cache_by_code", {})
+    id_cache = session.info.setdefault("_account_cache_by_id", {})
+
     resolved: dict[str, Account] = {}
+    missing_configs: dict[str, tuple[AccountMappingKey, dict]] = {}
+
     for key in keys:
         norm_key = _normalize_key(key)
-        resolved[norm_key.value] = await get_default_account(session, norm_key)
+        config = DEFAULT_ACCOUNT_CONFIGS[norm_key]
+        code = config["code"]
+
+        if code in cache:
+            resolved[norm_key.value] = cache[code]
+        elif code in code_cache:
+            resolved[norm_key.value] = code_cache[code]
+            cache[code] = code_cache[code]
+        else:
+            missing_configs[code] = (norm_key, config)
+
+    if missing_configs:
+        stmt = select(Account).where(Account.code.in_(list(missing_configs.keys())))
+        result = await session.execute(stmt)
+        found_accounts = result.scalars().all()
+
+        for acct in found_accounts:
+            cache[acct.code] = acct
+            code_cache[acct.code] = acct
+            id_cache[acct.id] = acct
+            norm_k, _ = missing_configs.pop(acct.code)
+            resolved[norm_k.value] = acct
+
+        # Any still missing after query need scaffolding
+        for code, (norm_k, config) in missing_configs.items():
+            logger.info(
+                "Default GL account '%s' (code %s) not found in schema; scaffolding automatically.",
+                norm_k.value,
+                code,
+            )
+            acct = Account(
+                code=code,
+                name=config["name"],
+                name_ar=config.get("name_ar"),
+                account_type=config["account_type"],
+                is_active=True,
+                is_system=True,
+            )
+            session.add(acct)
+            await session.flush()
+            cache[code] = acct
+            code_cache[code] = acct
+            id_cache[acct.id] = acct
+            resolved[norm_k.value] = acct
+
     return resolved

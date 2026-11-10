@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans_Arabic, JetBrains_Mono, Manrope, Inter } from "next/font/google";
+import { Cairo, JetBrains_Mono } from "next/font/google";
 import { QueryProvider } from "@/lib/query-provider";
 import "./globals.css";
 
-const plexArabic = IBM_Plex_Sans_Arabic({
+const cairo = Cairo({
   subsets: ["arabic", "latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-sans",
@@ -15,22 +15,13 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
-const manrope = Manrope({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-manrope",
-});
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-inter",
-});
-
 export const metadata: Metadata = {
-  title: "المرجع الرقمي للتاجر المصري - Nexus ERP",
+  title: "Trust Core — المرجع الرقمي للتاجر المصري",
   description: "Enterprise Resource Planning for Egyptian Merchants",
 };
+
+// Runs before hydration so the saved theme is applied without a flash.
+const themeInit = `try{var t=localStorage.getItem("trustcore-theme");if(t==="dark"||(!t&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark")}}catch(e){}`;
 
 export default function RootLayout({
   children,
@@ -38,10 +29,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body
         suppressHydrationWarning
-        className={`${plexArabic.variable} ${jetbrainsMono.variable} ${manrope.variable} ${inter.variable} font-sans bg-surface text-on-surface min-h-screen antialiased`}
+        className={`${cairo.variable} ${jetbrainsMono.variable} font-sans bg-surface text-on-surface min-h-screen antialiased`}
       >
         <QueryProvider>{children}</QueryProvider>
       </body>

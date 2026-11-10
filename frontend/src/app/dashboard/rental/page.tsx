@@ -116,30 +116,20 @@ const fuelLevels = [
 ];
 
 export default function RentalPage() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"fleet" | "rentals">("fleet");
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  // Fleet edit/delete: PATCH /rental/fleet/{id} and DELETE /rental/fleet/{id}
-  // existed server-side but were unreachable from the UI (same gap as rooms).
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [deletingVehicle, setDeletingVehicle] = useState<Vehicle | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
+  const { data: vehicles = [], isLoading: loading, isError } = useQuery({
+    queryKey: ["rental-fleet"],
+    queryFn: async () => {
       const { data } = await apiClient.get<Vehicle[]>("/rental/fleet");
-      setVehicles(data);
-    } catch {
-      setError("تعذر تحميل الأسطول. فعّل موديول تأجير السيارات من صفحة الحالات أولاً.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+      return data;
+    },
+  });
+  const error = isError ? "تعذر تحميل الأسطول. فعّل موديول تأجير السيارات من صفحة الحالات أولاً." : "";
 
   return (
     <div className="space-y-gutter">
@@ -221,19 +211,33 @@ export default function RentalPage() {
             </div>
           )}
 
-          {modalOpen && <VehicleModal onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); fetchAll(); }} />}
+          {modalOpen && (
+            <VehicleModal
+              onClose={() => setModalOpen(false)}
+              onSaved={() => {
+                setModalOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+              }}
+            />
+          )}
           {editingVehicle && (
             <VehicleModal
               vehicle={editingVehicle}
               onClose={() => setEditingVehicle(null)}
-              onSaved={() => { setEditingVehicle(null); fetchAll(); }}
+              onSaved={() => {
+                setEditingVehicle(null);
+                queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+              }}
             />
           )}
           {deletingVehicle && (
             <DeleteVehicleDialog
               vehicle={deletingVehicle}
               onClose={() => setDeletingVehicle(null)}
-              onDeleted={() => { setDeletingVehicle(null); fetchAll(); }}
+              onDeleted={() => {
+                setDeletingVehicle(null);
+                queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+              }}
             />
           )}
         </>
@@ -401,7 +405,12 @@ function RentalsTab({ vehicles }: { vehicles: Vehicle[] }) {
   const transitionMutation = useMutation({
     mutationFn: async ({ id, to_stage, data_patch }: { id: string; to_stage: string; data_patch?: Record<string, any> }) =>
       apiClient.post(`/cases/${id}/transition`, { to_stage, data_patch }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rental-cases"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rental-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+      queryClient.invalidateQueries({ queryKey: ["vehicle-availability"] });
+      queryClient.invalidateQueries({ queryKey: ["cases"] });
+    },
   });
 
   if (!caseType) {
@@ -508,7 +517,13 @@ function RentalsTab({ vehicles }: { vehicles: Vehicle[] }) {
           caseTypeId={caseType.id}
           vehicles={vehicles}
           onClose={() => setNewModalOpen(false)}
-          onCreated={() => { setNewModalOpen(false); queryClient.invalidateQueries({ queryKey: ["rental-cases"] }); }}
+          onCreated={() => {
+            setNewModalOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["rental-cases"] });
+            queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+            queryClient.invalidateQueries({ queryKey: ["vehicle-availability"] });
+            queryClient.invalidateQueries({ queryKey: ["cases"] });
+          }}
         />
       )}
       {inspectionTarget && (
@@ -519,6 +534,9 @@ function RentalsTab({ vehicles }: { vehicles: Vehicle[] }) {
           onDone={() => {
             setInspectionTarget(null);
             queryClient.invalidateQueries({ queryKey: ["rental-cases"] });
+            queryClient.invalidateQueries({ queryKey: ["rental-fleet"] });
+            queryClient.invalidateQueries({ queryKey: ["vehicle-availability"] });
+            queryClient.invalidateQueries({ queryKey: ["cases"] });
           }}
         />
       )}

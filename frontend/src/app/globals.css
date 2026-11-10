@@ -2,87 +2,175 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Trust Core design tokens (from the Figma redesign "Trust Core — ERP Redesign").
+ * The M3-style variable names are kept so every existing page picks up the new
+ * look automatically; only the values change. Light is the default, `.dark`
+ * flips to the dark palette.
+ */
 @layer base {
   :root {
-    /* Nexus ERP — Material Design 3 token set (light) */
-    --primary: #00288e;
+    --primary: #2540f0;
     --on-primary: #ffffff;
-    --primary-container: #1e40af;
-    --on-primary-container: #a8b8ff;
-    --inverse-primary: #b8c4ff;
-    --primary-fixed: #dde1ff;
-    --primary-fixed-dim: #b8c4ff;
-    --on-primary-fixed: #001453;
-    --on-primary-fixed-variant: #173bab;
+    --primary-container: #1d31c8;
+    --on-primary-container: #e0e6ff;
+    --inverse-primary: #a9b7ff;
+    --primary-fixed: #eaeeff;
+    --primary-fixed-dim: #c7d0ff;
+    --on-primary-fixed: #0b1470;
+    --on-primary-fixed-variant: #1d31c8;
 
-    --secondary: #006a61;
+    --secondary: #0e9f6e;
     --on-secondary: #ffffff;
-    --secondary-container: #86f2e4;
-    --on-secondary-container: #006f66;
-    --secondary-fixed: #89f5e7;
-    --secondary-fixed-dim: #6bd8cb;
-    --on-secondary-fixed: #00201d;
-    --on-secondary-fixed-variant: #005049;
+    --secondary-container: #bff0dc;
+    --on-secondary-container: #0a6b4a;
+    --secondary-fixed: #d8f5e8;
+    --secondary-fixed-dim: #9fe5c8;
+    --on-secondary-fixed: #05301f;
+    --on-secondary-fixed-variant: #0a6b4a;
 
-    --tertiary: #440098;
+    --tertiary: #7c3aed;
     --on-tertiary: #ffffff;
-    --tertiary-container: #5f00d1;
-    --on-tertiary-container: #c9aeff;
-    --tertiary-fixed: #eaddff;
-    --tertiary-fixed-dim: #d2bbff;
-    --on-tertiary-fixed: #25005a;
-    --on-tertiary-fixed-variant: #5a00c6;
+    --tertiary-container: #6d28d9;
+    --on-tertiary-container: #e3d4ff;
+    --tertiary-fixed: #ede4ff;
+    --tertiary-fixed-dim: #d5beff;
+    --on-tertiary-fixed: #2e0a6b;
+    --on-tertiary-fixed-variant: #5b21b6;
 
-    --error: #ba1a1a;
+    --error: #d92d4a;
     --on-error: #ffffff;
-    --error-container: #ffdad6;
-    --on-error-container: #93000a;
+    --error-container: #fee2e7;
+    --on-error-container: #9f1239;
 
-    --background: #f8f9fa;
-    --on-background: #191c1d;
+    --background: #f6f7fb;
+    --on-background: #141a2e;
 
-    --surface: #f8f9fa;
-    --on-surface: #191c1d;
-    --surface-variant: #e1e3e4;
-    --on-surface-variant: #444653;
-    --surface-dim: #d9dadb;
-    --surface-bright: #f8f9fa;
-    --surface-tint: #3755c3;
+    --surface: #f6f7fb;
+    --on-surface: #141a2e;
+    --surface-variant: #e7eaf3;
+    --on-surface-variant: #4b5470;
+    --surface-dim: #dadeea;
+    --surface-bright: #ffffff;
+    --surface-tint: #2540f0;
     --surface-container-lowest: #ffffff;
-    --surface-container-low: #f3f4f5;
-    --surface-container: #edeeef;
-    --surface-container-high: #e7e8e9;
-    --surface-container-highest: #e1e3e4;
+    --surface-container-low: #f1f3f9;
+    --surface-container: #eceff6;
+    --surface-container-high: #e6e9f2;
+    --surface-container-highest: #e0e4ee;
 
-    --inverse-surface: #2e3132;
-    --inverse-on-surface: #f0f1f2;
+    --inverse-surface: #141a2e;
+    --inverse-on-surface: #f1f3f9;
 
-    --outline: #757684;
-    --outline-variant: #c4c5d5;
+    --outline: #6b7391;
+    --outline-variant: #dde1ed;
 
-    /* Status colors kept outside the M3 palette for quick scanning */
-    --success: #2e7d32;
-    --success-bg: #e8f5e9;
-    --warning: #f9a825;
-    --warning-bg: #fffde7;
+    --success: #0e9f6e;
+    --success-bg: #e3f7ef;
+    --warning: #c26d05;
+    --warning-bg: #fef3c7;
+    --info: #0284c7;
+    --info-bg: #e0f2fe;
+
+    /* Sidebar stays navy in both themes */
+    --sidebar: #0b0f1e;
+    --sidebar-hover: #151b33;
+    --sidebar-active: #1d2a8c;
+    --sidebar-border: #1c2342;
+    --sidebar-text: #9aa3bf;
+    --on-sidebar: #ffffff;
+  }
+
+  .dark {
+    --primary: #6f82ff;
+    --on-primary: #0b1470;
+    --primary-container: #2540f0;
+    --on-primary-container: #e0e6ff;
+    --inverse-primary: #2540f0;
+    --primary-fixed: #1b2466;
+    --primary-fixed-dim: #2d3a99;
+    --on-primary-fixed: #dce3ff;
+    --on-primary-fixed-variant: #a9b7ff;
+
+    --secondary: #34d399;
+    --on-secondary: #05301f;
+    --secondary-container: #0f3d2e;
+    --on-secondary-container: #86efc5;
+    --secondary-fixed: #0f3d2e;
+    --secondary-fixed-dim: #146a4d;
+    --on-secondary-fixed: #c7f7e2;
+    --on-secondary-fixed-variant: #86efc5;
+
+    --tertiary: #a78bfa;
+    --on-tertiary: #2e0a6b;
+    --tertiary-container: #6d28d9;
+    --on-tertiary-container: #ede4ff;
+    --tertiary-fixed: #2a1760;
+    --tertiary-fixed-dim: #4a2a9a;
+    --on-tertiary-fixed: #ede4ff;
+    --on-tertiary-fixed-variant: #d5beff;
+
+    --error: #fb7185;
+    --on-error: #4c0519;
+    --error-container: #4c1220;
+    --on-error-container: #fecdd6;
+
+    --background: #0b0f1e;
+    --on-background: #e8eaf4;
+
+    --surface: #0b0f1e;
+    --on-surface: #e8eaf4;
+    --surface-variant: #222a4d;
+    --on-surface-variant: #a5adc8;
+    --surface-dim: #080b17;
+    --surface-bright: #222a4d;
+    --surface-tint: #6f82ff;
+    --surface-container-lowest: #141a2e;
+    --surface-container-low: #10152a;
+    --surface-container: #1a2140;
+    --surface-container-high: #222a4d;
+    --surface-container-highest: #2b3460;
+
+    --inverse-surface: #e8eaf4;
+    --inverse-on-surface: #141a2e;
+
+    --outline: #7e88a8;
+    --outline-variant: #2b3460;
+
+    --success: #34d399;
+    --success-bg: #0f3d2e;
+    --warning: #fbbf24;
+    --warning-bg: #3d2f0a;
+    --info: #38bdf8;
+    --info-bg: #0c2f45;
+
+    --sidebar: #070a16;
+    --sidebar-hover: #111731;
+    --sidebar-active: #1d2a8c;
+    --sidebar-border: #151b33;
+  }
+
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
     @apply bg-surface text-on-surface font-sans antialiased;
-    background-image: radial-gradient(#e5e7eb 0.5px, transparent 0.5px);
-    background-size: 24px 24px;
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--surface-container-low);
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
     background: var(--outline-variant);
-    border-radius: 3px;
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--outline);
@@ -91,13 +179,12 @@
 
 @layer components {
   .glass-card {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(8px);
+    background: var(--surface-container-lowest);
     @apply border border-outline-variant shadow-card;
   }
 
   .input-field {
-    @apply w-full h-11 rounded-lg border border-outline-variant bg-surface-container-low px-4 text-body-md text-on-surface outline-none text-right transition-all;
-    @apply focus:border-primary focus:ring-2 focus:ring-primary focus:ring-opacity-30;
+    @apply w-full h-11 rounded-lg border border-outline-variant bg-surface-container-lowest px-4 text-body-md text-on-surface outline-none text-right transition-all placeholder:text-outline;
+    @apply focus:border-primary focus:ring-2 focus:ring-primary focus:ring-opacity-25;
   }
 }

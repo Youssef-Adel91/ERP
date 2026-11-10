@@ -178,7 +178,7 @@ async def create_adhoc_invoice(
 async def post_invoice(
     session: AsyncSession,
     invoice_id: UUID,
-    tenant_id: UUID | str,
+    tenant_id: UUID | str = "00000000-0000-0000-0000-000000000001",
 ) -> SalesInvoice:
     """
     Posts a DRAFT invoice:

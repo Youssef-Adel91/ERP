@@ -80,8 +80,8 @@ export default function FinancePage() {
     setError("");
     try {
       const [chequesRes, contactsRes] = await Promise.all([
-        apiClient.get<{ total: number; items: Cheque[] }>("/finance/cheques"),
-        apiClient.get<{ items: Contact[] }>("/contacts", { params: { limit: 200 } }),
+        apiClient.get<{ total: number; items: Cheque[] }>("/finance/cheques/"),
+        apiClient.get<{ items: Contact[] }>("/contacts/", { params: { limit: 200 } }),
       ]);
       setCheques(chequesRes.data.items);
       setContacts(contactsRes.data.items);
@@ -238,7 +238,7 @@ function CreateChequeModal({
     setSubmitting(true);
     setErrorMsg("");
     try {
-      await apiClient.post("/finance/cheques", data);
+      await apiClient.post("/finance/cheques/", data);
       onCreated();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;

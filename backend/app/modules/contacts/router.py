@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.contacts.schemas import (
     ContactCreateRequest,
@@ -25,7 +26,7 @@ from app.modules.contacts.schemas import (
 from app.modules.system.dependencies import CurrentUser
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES", "ACCOUNTING"))])
 
 
 # ── POST / — Create Contact ───────────────────────────────────────────────────

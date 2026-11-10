@@ -1,19 +1,13 @@
 import type { ReactNode } from "react";
 
 /**
- * Card — the "glass-card" surface used across every Stitch reference
- * (direction_6_*). Matches: `.glass-card p-card-padding rounded-xl
- * shadow-sm hover:shadow-md transition-shadow` from the design system.
- *
- * Deliberately capped at `rounded-xl` (12px) — the design system's
- * borderRadius scale tops out there (`DEFAULT`/`lg`/`xl`/`full`), so cards
- * should never reach for `rounded-2xl` even though Tailwind config makes
- * it technically available.
+ * Card — Trust Core surface: white (dark: navy) panel, 1px border, radius/lg,
+ * soft shadow. Kept as the single card primitive used across all pages.
  */
 export function Card({
   children,
   className = "",
-  hoverable = true,
+  hoverable = false,
   padded = true,
 }: {
   children: ReactNode;
@@ -24,8 +18,8 @@ export function Card({
   return (
     <div
       className={[
-        "glass-card rounded-xl shadow-sm",
-        hoverable ? "hover:shadow-md transition-shadow" : "",
+        "glass-card rounded-lg",
+        hoverable ? "hover:shadow-overlay transition-shadow" : "",
         padded ? "p-card-padding" : "",
         className,
       ]
@@ -37,7 +31,7 @@ export function Card({
   );
 }
 
-/** Header row for a Card that contains a table/list — title + right-aligned meta (count, filter, etc). */
+/** Header row for a Card that contains a table/list — title + meta (count, filter, etc). */
 export function CardHeader({
   title,
   meta,

@@ -22,11 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRole
 from app.modules.system.dependencies import CurrentUser
 from app.modules.logistics.models.carriers import CarrierAccount
 from app.modules.logistics.providers.registry import list_supported_carriers
 
-router = APIRouter(prefix="/logistics/carriers", tags=["Logistics — Carrier Accounts"])
+router = APIRouter(prefix="/logistics/carriers", tags=["Logistics — Carrier Accounts"], dependencies=[Depends(RequireRole('OWNER','ADMIN'))])
 
 _CARRIER_LABELS: dict[str, str] = {
     "bosta": "بوسطة (Bosta)",

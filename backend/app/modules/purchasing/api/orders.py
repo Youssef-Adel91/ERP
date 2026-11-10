@@ -26,11 +26,12 @@ from app.modules.purchasing.exceptions import (
     PurchaseOrderNotFoundError,
     SupplierNotFoundError,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.purchasing.models.core import PurchaseOrder, PurchaseOrderStatus
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/purchasing/orders", tags=["Purchasing - Purchase Orders"])
+router = APIRouter(prefix="/purchasing/orders", tags=["Purchasing - Purchase Orders"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "ACCOUNTING"))])
 
 
 class PurchaseOrderLineIn(BaseModel):

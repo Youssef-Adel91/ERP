@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 ENTITLEMENT_CACHE_TTL = 3600  # 1 hour
 
+redis_client = None
+
+
+async def _get_rc():
+    if redis_client is not None:
+        return redis_client
+    return await _get_redis_client()
+
 
 async def get_tenant_entitlements(session: AsyncSession, tenant_id: UUID) -> dict:
     """
@@ -26,7 +34,7 @@ async def get_tenant_entitlements(session: AsyncSession, tenant_id: UUID) -> dic
     cache_key = f"entitlements:{tenant_id}"
     
     # 1. Check Redis
-    rc = await _get_redis_client()
+    rc = await _get_rc()
     cached_data = await rc.get(cache_key)
     if cached_data:
         return json.loads(cached_data)
@@ -47,7 +55,7 @@ async def get_tenant_entitlements(session: AsyncSession, tenant_id: UUID) -> dic
         entitlements = {}
 
     # 3. Cache in Redis
-    rc = await _get_redis_client()
+    rc = await _get_rc()
     await rc.setex(cache_key, ENTITLEMENT_CACHE_TTL, json.dumps(entitlements))
     
     return entitlements
@@ -66,6 +74,6 @@ async def invalidate_entitlements(tenant_id: UUID) -> None:
     Clears the Redis cache for a tenant. Called on plan upgrade/downgrade or suspension.
     """
     cache_key = f"entitlements:{tenant_id}"
-    rc = await _get_redis_client()
+    rc = await _get_rc()
     await rc.delete(cache_key)
     logger.info(f"Invalidated entitlement cache for tenant {tenant_id}")

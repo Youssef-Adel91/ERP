@@ -17,13 +17,14 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.cases.models.core import Case
 from app.modules.system.dependencies import CurrentUser
 from app.plugins.travel.bootstrap import bootstrap_travel_case_type
 from app.plugins.travel.services.financials import calculate_booking_financials
 from app.plugins.travel.services.pdf_builder import build_booking_confirmation_pdf
 
-router = APIRouter(prefix="/travel", tags=["Travel Plugin"])
+router = APIRouter(prefix="/travel", tags=["Travel Plugin"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 
 @router.post("/bootstrap")

@@ -126,6 +126,7 @@ async def _post_return_revenue(
                 ar_account_code=receivable_account,
                 entry_date=date.today(),
                 description=f"Vehicle Rental Return — {customer_name}",
+                tax_amount=float(tax_amount),
                 line_items=line_items,
             ),
         ),

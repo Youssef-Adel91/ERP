@@ -34,8 +34,9 @@ from app.plugins.recruitment.services.matching import (
 )
 from app.plugins.recruitment.services.importing import import_candidates_from_excel
 from app.plugins.recruitment.services.pdf_builder import build_offer_letter_pdf
+from app.core.security.security import RequireRoleForWrites
 
-router = APIRouter(prefix="/recruitment", tags=["Recruitment Plugin"])
+router = APIRouter(prefix="/recruitment", tags=["Recruitment Plugin"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF"))])
 
 # RBAC note (Recruitment Readiness Wave): every endpoint below requires an
 # authenticated CurrentUser (same baseline pattern as app/plugins/travel).

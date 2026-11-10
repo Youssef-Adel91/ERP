@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getAccessToken } from "@/lib/api-client";
 import { useAppStore } from "@/store/use-app-store";
 import { RevenueTrendChart } from "@/components/dashboard/RevenueTrendChart";
 import { ExpenseBreakdownChart } from "@/components/dashboard/ExpenseBreakdownChart";
@@ -28,7 +29,10 @@ export default function InsightsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) {
+    // zustand's persist rehydrates asynchronously, so `user` is null on the
+    // first render after a hard refresh. Only bounce to /login when there is
+    // genuinely no session token; otherwise wait for the store to hydrate.
+    if (!user && !getAccessToken()) {
       router.push("/login");
     }
   }, [user, router]);

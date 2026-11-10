@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
+import AuthShell from "@/components/auth/AuthShell";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/use-app-store";
 import { apiClient, saveSession, pickDetail } from "@/lib/api-client";
@@ -82,13 +83,13 @@ export default function RegisterPage() {
     }, 3000);
 
     try {
-      // Register takes up to ~60s (Alembic tenant migrations + COA seed)
+      // Register can take 2-3 min on a remote DB (one DDL round trip per table/index)
       const { data: res } = await apiClient.post<RegisterResponse>("/auth/register", {
         company_name: data.company_name,
         full_name: data.full_name,
         email: data.email,
         password: data.password,
-      }, { timeout: 120_000 });
+      }, { timeout: 300_000 });
 
       clearInterval(msgInterval);
 
@@ -100,27 +101,56 @@ export default function RegisterPage() {
         name: res.full_name,
         email: res.email,
         role: "OWNER",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=00288E&color=fff`,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(res.full_name)}&background=2540F0&color=fff`,
       });
 
+      // The server finishes creating the workspace in the background
+      // (~2-3 min). Keep the progress messages going and poll until ready.
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 10 * 60 * 1000;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const { data: st } = await apiClient.get<{ state: "ready" | "pending" | "failed" }>(
+            "/auth/provisioning-status",
+          );
+          if (st.state === "ready") break;
+          if (st.state === "failed") {
+            throw new Error("provisioning_failed");
+          }
+        } catch (pollErr) {
+          if (pollErr instanceof Error && pollErr.message === "provisioning_failed") throw pollErr;
+          // transient network/401-refresh hiccup: keep polling
+        }
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          throw new Error("provisioning_timeout");
+        }
+      }
+      clearInterval(msgInterval);
       router.push("/onboarding/systems");
     } catch (err) {
       clearInterval(msgInterval);
+      if (err instanceof Error && err.message === "provisioning_failed") {
+        setErrorMsg("تعذّر تجهيز مساحة العمل. تواصل مع الدعم الفني وسنكمل إعداد حسابك.");
+        return;
+      }
+      if (err instanceof Error && err.message === "provisioning_timeout") {
+        setErrorMsg("التجهيز أخذ وقتًا أطول من المتوقع. جرّب تسجيل الدخول بعد دقائق.");
+        return;
+      }
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setErrorMsg(pickDetail(axiosErr, axiosErr.message || "حدث خطأ أثناء إنشاء الحساب."));
+      setErrorMsg(
+        axiosErr.response
+          ? pickDetail(axiosErr, "حدث خطأ أثناء إنشاء الحساب.")
+          : "تعذر إتمام التسجيل (الخادم لم يرد). لو الحساب اتنشأ جرّب تسجيل الدخول، وإلا حاول مرة أخرى بعد قليل.",
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div
-      className="min-h-screen bg-surface flex flex-col items-center justify-center p-gutter"
-      style={{
-        backgroundImage: "radial-gradient(#e5e7eb 0.5px, transparent 0.5px)",
-        backgroundSize: "24px 24px",
-      }}
-    >
+    <AuthShell>
       <main className="w-full max-w-[500px] animate-in fade-in duration-700 slide-in-from-bottom-4">
 
         {/* Logo & Header */}
@@ -131,7 +161,7 @@ export default function RegisterPage() {
                 <path d="M440-80v-167l-44 43-56-56 140-140 140 140-56 56-44-43v167h-80ZM220-340l-56-56 43-44H40v-80h167l-43-44 56-56 140 140-140 140Zm520 0L600-480l140-140 56 56-43 44h167v80H753l43 44-56 56ZM480-600q-33 0-56.5-23.5T400-680q0-33 23.5-56.5T480-760q33 0 56.5 23.5T560-680q0 33-23.5 56.5T480-600Z"/>
               </svg>
             </div>
-            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Nexus ERP</h1>
+            <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight">Trust Core</h1>
           </div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface-variant">
             أنشئ مساحة عمل شركتك — مجاناً
@@ -350,6 +380,6 @@ export default function RegisterPage() {
           ))}
         </div>
       </main>
-    </div>
+    </AuthShell>
   );
 }

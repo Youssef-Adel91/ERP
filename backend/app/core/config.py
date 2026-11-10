@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ───────────────────────────────────────────────────────────────────
-    PROJECT_NAME: str = "Omni ERP — Modular ERP & Trust Network"
+    PROJECT_NAME: str = "Trust Core — Modular ERP & Trust Network"
     API_V1_PREFIX: str = "/api/v1"
     ENVIRONMENT: str = "development"       # development | staging | production
     DEBUG: bool = True
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_USE_TLS: bool = True
     SMTP_FROM_EMAIL: str | None = None
-    SMTP_FROM_NAME: str = "Nexus ERP"
+    SMTP_FROM_NAME: str = "Trust Core"
 
     # ── AI Provider (app.core.ai.adapter — Copilot / Reporting Bot) ─────────────
     # Deliberately NOT the vendor `openai` SDK — talks to any
@@ -188,6 +188,11 @@ class Settings(BaseSettings):
                 "CORS_ORIGINS is still the default localhost-only dev list. Set "
                 "the CORS_ORIGINS environment variable to your real frontend "
                 "origin(s) (comma-separated), e.g. https://app.yourdomain.com."
+            )
+        if self.EVENT_BUS_BACKEND == "memory":
+            errors.append(
+                "EVENT_BUS_BACKEND is 'memory' (in-process, lost on restart and "
+                "not shared between workers). Set EVENT_BUS_BACKEND=redis."
             )
         if self.DEBUG:
             errors.append(

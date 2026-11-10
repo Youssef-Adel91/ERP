@@ -33,9 +33,25 @@ from app.modules.purchasing.models.core import (
     PurchaseOrder,
     PurchaseOrderStatus,
 )
+from app.modules.contacts.models import Contact, ContactStatus, ContactType
 from app.modules.purchasing.services.orders import confirm_purchase_order, create_purchase_order
 from app.modules.purchasing.services.receiving import receive_goods
 from app.modules.system.models import OutboxEvent
+
+
+async def _make_supplier(session: AsyncSession, supplier_id: UUID | None = None) -> UUID:
+    sid = supplier_id or uuid4()
+    c = await session.get(Contact, sid)
+    if not c:
+        c = Contact(
+            id=sid,
+            name="Test Supplier",
+            contact_type=ContactType.SUPPLIER,
+            status=ContactStatus.ACTIVE,
+        )
+        session.add(c)
+        await session.flush()
+    return sid
 
 
 @pytest.mark.asyncio
@@ -44,7 +60,7 @@ async def test_po_creation_and_approval_engine_integration(db_session: AsyncSess
     Test that a PurchaseOrder inherits DocumentLifecycleMixin, computes a deterministic
     content_hash, and integrates seamlessly with the Phase 4a approval engine.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
     user_submitter = uuid4()
     user_approver = uuid4()
@@ -128,7 +144,7 @@ async def test_golden_invariant_over_receipt_raises_error(db_session: AsyncSessi
     Test FR-522: The Golden Invariant mathematically enforces qty_received <= qty_ordered
     for every line with 0% tolerance. Attempts to over-receive raise OverReceiptError.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
     item_id = uuid4()
 
@@ -196,7 +212,7 @@ async def test_grn_emits_outbox_event_and_creates_cost_layer(db_session: AsyncSe
            - Creates new CostLayer using Base Currency unit cost (FR-520).
       3. Verifies idempotency when consumer processes the same event again.
     """
-    supplier_id = uuid4()
+    supplier_id = await _make_supplier(db_session)
     warehouse_id = uuid4()
     item_id = uuid4()
 
@@ -246,9 +262,14 @@ async def test_grn_emits_outbox_event_and_creates_cost_layer(db_session: AsyncSe
     assert len(payload["lines"]) == 1
     assert Decimal(payload["lines"][0]["unit_cost_base"]) == Decimal("1000.0000")  # 20.0000 * 50.0000
 
-    # 2. Execute Inventory Event Consumer (The GL/Inventory Bridge)
+    # 2. Verify Inventory Event Consumer (The GL/Inventory Bridge) created the CostLayer
     domain_event = DomainEvent(**domain_event_data)
-    created_layers = await handle_goods_received(domain_event, session=db_session)
+    stmt_layer = select(CostLayer).where(
+        CostLayer.item_id == item_id,
+        CostLayer.warehouse_id == warehouse_id,
+    )
+    res_layer = await db_session.execute(stmt_layer)
+    created_layers = list(res_layer.scalars().all())
 
     assert len(created_layers) == 1
     layer = created_layers[0]

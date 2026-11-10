@@ -32,6 +32,7 @@ from fastapi import BackgroundTasks
 from app.core.database import get_public_db, get_redis
 from app.core.notifications.email import send_email
 from app.core.security import (
+    RequireRole,
     create_access_token,
     create_password_reset_token,
     create_refresh_token,
@@ -47,6 +48,7 @@ from app.core.security import (
 )
 from app.modules.system.dependencies import CurrentUser
 from app.modules.system.models import Tenant, TenantStatus, User, UserRole
+from app.modules.system.schemas import UserCreateRequest, UserResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -126,6 +128,72 @@ class MessageResponse(BaseModel):
 
 
 # ── Registration Endpoint ─────────────────────────────────────────────────────
+
+
+def _provisioning_key(tenant_id: str) -> str:
+    return f"tenant:provisioning:{tenant_id}"
+
+
+async def _provision_in_background(tenant_id: str) -> None:
+    """Create the tenant schema, then flip the tenant to ACTIVE and clear the flag."""
+    from uuid import UUID
+
+    from app.core.db.database import _get_redis_client, provision_tenant_schema, public_session
+    from app.modules.system.models import ProvisioningState
+
+    rc = await _get_redis_client()
+    key = _provisioning_key(tenant_id)
+    try:
+        await provision_tenant_schema(tenant_id)
+        async with public_session() as session:
+            tenant = await session.get(Tenant, UUID(tenant_id))
+            if tenant is not None:
+                tenant.provisioning_state = ProvisioningState.SEQUENCES_CREATED
+                tenant.status = TenantStatus.ACTIVE
+        await rc.delete(key)
+        logger.info("✅ Background provisioning complete for tenant %s", tenant_id)
+    except Exception as exc:  # noqa: BLE001 — must never escape a background task
+        logger.error("❌ Background provisioning FAILED for tenant %s: %s", tenant_id, exc)
+        try:
+            await rc.set(key, "failed", ex=86400)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def reconcile_orphaned_provisioning() -> None:
+    """Find any tenant:provisioning:* keys left 'pending' after a crash/restart.
+    If the tenant is already ACTIVE in DB, clear the key.
+    If still PENDING_SETUP, resume background provisioning."""
+    import asyncio
+    from uuid import UUID
+
+    from app.core.db.database import _get_redis_client, public_session
+    from app.modules.system.models import ProvisioningState, Tenant, TenantStatus
+
+    try:
+        rc = await _get_redis_client()
+        keys = await rc.keys("tenant:provisioning:*")
+        for key in keys:
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            tenant_id_str = key_str.split(":")[-1]
+            try:
+                val = await rc.get(key_str)
+                val_str = val.decode() if isinstance(val, bytes) else str(val) if val else ""
+                if val_str == "pending":
+                    async with public_session() as session:
+                        tenant = await session.get(Tenant, UUID(tenant_id_str))
+                        if tenant is None:
+                            await rc.delete(key_str)
+                        elif tenant.status == TenantStatus.ACTIVE and tenant.provisioning_state == ProvisioningState.SEQUENCES_CREATED:
+                            await rc.delete(key_str)
+                            logger.info("Reconciled completed tenant %s: cleared provisioning key.", tenant_id_str)
+                        else:
+                            logger.warning("Reconciling interrupted provisioning for tenant %s: restarting in background.", tenant_id_str)
+                            asyncio.create_task(_provision_in_background(tenant_id_str))
+            except Exception as e:
+                logger.error("Error reconciling key %s: %s", key_str, e)
+    except Exception as exc:
+        logger.warning("reconcile_orphaned_provisioning encountered an error: %s", exc)
 
 
 @router.post(
@@ -212,24 +280,21 @@ async def register(
     db.add(user)
     await db.flush()
 
-    # ── 4. Provision tenant schema — AWAITED, not a background task ──────────
-    # provision_tenant_schema() runs the real alembic tenant migration chain
-    # (creates every tenant table incl. all vertical plugin tables, and
-    # stamps alembic_version) plus the Chart of Accounts seed, in a
-    # subprocess (still required to dodge the Windows ProactorEventLoop +
-    # greenlet crash), but now properly awaited — see its docstring. If it
-    # raises, we deliberately do NOT catch it here: letting it propagate is
-    # what makes the whole registration fail and roll back cleanly instead
-    # of leaving a broken tenant that looks ACTIVE.
-    await provision_tenant_schema(str(tenant_id))
-
-    tenant.provisioning_state = ProvisioningState.COMPLETE
-    tenant.status = TenantStatus.ACTIVE
-
+    # ── 4. Provision tenant schema in the BACKGROUND ─────────────────────────
+    # Provisioning (schema + ~100 tables + COA seed) takes ~2.5 min against a
+    # remote DB — far too long to hold an HTTP request open (browser/proxy
+    # timeouts, and a lost request meant a half-created tenant). We commit
+    # the Tenant+User rows now, flag the tenant as "provisioning" in Redis,
+    # and return tokens immediately. TenantMiddleware answers tenant-scoped
+    # requests with 503 TENANT_PROVISIONING until the flag clears, and the
+    # frontend polls GET /auth/provisioning-status. On failure the flag
+    # becomes "failed" (the tenant stays PENDING_SETUP and never looks ACTIVE).
     await db.commit()
+    await redis.set(_provisioning_key(str(tenant_id)), "pending", ex=3600)
+    background_tasks.add_task(_provision_in_background, str(tenant_id))
 
     logger.info(
-        "✅ Registration complete: tenant='%s', schema='%s', user='%s'",
+        "✅ Registration accepted (provisioning in background): tenant='%s', schema='%s', user='%s'",
         tenant.name, schema, user.email,
     )
 
@@ -252,9 +317,22 @@ async def register(
         full_name=user.full_name,
         access_token=access_token,
         refresh_token=refresh_token,
-        message=f"تم تسجيل شركة '{tenant.name}' بنجاح.",
+        message=f"تم تسجيل شركة '{tenant.name}'. جاري تجهيز مساحة العمل...",
     )
 
+
+
+@router.get("/provisioning-status", tags=["Authentication"], summary="Tenant workspace setup status")
+async def provisioning_status(
+    current_user: CurrentUser,
+    redis: aioredis.Redis = Depends(get_redis),
+) -> dict[str, str]:
+    """ready | pending | failed — polled by the registration screen."""
+    flag = await redis.get(_provisioning_key(str(current_user.tenant_id)))
+    if flag is None:
+        return {"state": "ready"}
+    value = flag.decode() if isinstance(flag, bytes) else str(flag)
+    return {"state": "failed" if value == "failed" else "pending"}
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -438,6 +516,41 @@ async def get_me(current_user: CurrentUser) -> dict:
     }
 
 
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new user within the tenant with a specific role",
+    dependencies=[Depends(RequireRole("OWNER", "ADMIN"))],
+    tags=["Authentication"],
+)
+async def create_tenant_user(
+    data: UserCreateRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_public_db),
+) -> UserResponse:
+    existing = await db.execute(
+        select(User).where(User.email == data.email.lower()),
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Email '{data.email}' is already in use.",
+        )
+
+    new_user = User(
+        tenant_id=current_user.tenant_id,
+        email=data.email.lower(),
+        hashed_password=hash_password(data.password),
+        full_name=data.full_name,
+        role=data.role,
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    return UserResponse.model_validate(new_user)
+
+
 # ── Password Reset ────────────────────────────────────────────────────────────
 
 
@@ -495,7 +608,7 @@ async def forgot_password(
     async def _send_reset_email() -> None:
         await send_email(
             to_email=user.email,
-            subject="إعادة تعيين كلمة المرور — Omni ERP",
+            subject="إعادة تعيين كلمة المرور — Trust Core",
             body_text=(
                 f"مرحبًا {user.full_name or ''},\n\n"
                 "تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك.\n"
