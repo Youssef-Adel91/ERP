@@ -35,9 +35,10 @@ from app.modules.inventory.models.core import (
     Warehouse,
     WarehouseType,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(tags=["Inventory - Items"])
+router = APIRouter(tags=["Inventory - Items"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF"))])
 
 
 # ── Items ─────────────────────────────────────────────────────────────────────

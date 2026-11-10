@@ -36,9 +36,10 @@ from app.modules.purchasing.services.allocation import (
     create_import_shipment,
     post_landed_costs,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/purchasing/import-shipments", tags=["Purchasing - Landed Cost Allocation"])
+router = APIRouter(prefix="/purchasing/import-shipments", tags=["Purchasing - Landed Cost Allocation"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING"))])
 
 
 class LandedCostLineIn(BaseModel):

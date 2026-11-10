@@ -27,9 +27,10 @@ from app.modules.reporting.service import (
     get_revenue_variance_analysis,
     get_top_customers_by_revenue,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/reporting", tags=["Reporting"])
+router = APIRouter(prefix="/reporting", tags=["Reporting"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING"))])
 
 
 @router.get("/revenue-trend", summary="Monthly revenue for the last N months")

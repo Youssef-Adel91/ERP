@@ -52,10 +52,11 @@ from app.modules.sales.services.invoicing import (
     generate_invoice_from_order,
     post_invoice,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.sales.services.pdf_builder import build_sales_invoice_pdf
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/sales/invoices", tags=["Sales - Invoices"])
+router = APIRouter(prefix="/sales/invoices", tags=["Sales - Invoices"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING", "SALES"))])
 
 
 class SalesInvoiceLineOut(BaseModel):

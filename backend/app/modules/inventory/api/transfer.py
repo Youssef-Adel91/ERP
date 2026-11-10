@@ -30,9 +30,10 @@ from app.modules.inventory.services.transfer import (
     dispatch_transfer,
     receive_transfer,
 )
+from app.core.security.security import RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/inventory/transfers", tags=["Inventory - Transfers"])
+router = APIRouter(prefix="/inventory/transfers", tags=["Inventory - Transfers"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF"))])
 
 
 class TransferLineIn(BaseModel):

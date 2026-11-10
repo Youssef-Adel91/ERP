@@ -58,10 +58,10 @@ from app.modules.approvals.services.exceptions import (
     IllegalStateTransitionError,
     SegregationOfDutiesError,
 )
-from app.core.security.security import RequireRole
+from app.core.security.security import RequireRole, RequireRoleForWrites
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/approvals", tags=["Approvals"])
+router = APIRouter(prefix="/approvals", tags=["Approvals"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING", "STAFF", "SALES"))])
 
 event_bus = get_event_bus()
 
@@ -236,7 +236,11 @@ class ApprovalDecisionIn(BaseModel):
     comment: str | None = None
 
 
-@router.post("/requests/{id}/decide", response_model=ApprovalDecision)
+@router.post(
+    "/requests/{id}/decide",
+    dependencies=[Depends(RequireRole("OWNER", "ADMIN", "ACCOUNTING"))],
+    response_model=ApprovalDecision,
+)
 async def decide(
     id: UUID,
     data: ApprovalDecisionIn,

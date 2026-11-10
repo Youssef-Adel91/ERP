@@ -20,10 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.cases.models.vendor import Vendor, VendorRateCard, VendorType
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/cases/vendors", tags=["Case Engine — Vendors"])
+router = APIRouter(prefix="/cases/vendors", tags=["Case Engine — Vendors"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "ACCOUNTING"))])
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────

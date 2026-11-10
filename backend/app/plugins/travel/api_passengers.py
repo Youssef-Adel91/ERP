@@ -27,11 +27,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.cases.models.core import Case
 from app.modules.system.dependencies import CurrentUser
 from app.plugins.travel.models.passenger import TravelPassenger
 
-router = APIRouter(prefix="/travel", tags=["Travel Plugin — Passengers"])
+router = APIRouter(prefix="/travel", tags=["Travel Plugin — Passengers"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 
 # ── Pydantic Schemas ─────────────────────────────────────────────────────────

@@ -32,6 +32,7 @@ from fastapi import BackgroundTasks
 from app.core.database import get_public_db, get_redis
 from app.core.notifications.email import send_email
 from app.core.security import (
+    RequireRole,
     create_access_token,
     create_password_reset_token,
     create_refresh_token,
@@ -47,6 +48,7 @@ from app.core.security import (
 )
 from app.modules.system.dependencies import CurrentUser
 from app.modules.system.models import Tenant, TenantStatus, User, UserRole
+from app.modules.system.schemas import UserCreateRequest, UserResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -512,6 +514,41 @@ async def get_me(current_user: CurrentUser) -> dict:
         "role": current_user.role,
         "is_active": current_user.is_active,
     }
+
+
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new user within the tenant with a specific role",
+    dependencies=[Depends(RequireRole("OWNER", "ADMIN"))],
+    tags=["Authentication"],
+)
+async def create_tenant_user(
+    data: UserCreateRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_public_db),
+) -> UserResponse:
+    existing = await db.execute(
+        select(User).where(User.email == data.email.lower()),
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Email '{data.email}' is already in use.",
+        )
+
+    new_user = User(
+        tenant_id=current_user.tenant_id,
+        email=data.email.lower(),
+        hashed_password=hash_password(data.password),
+        full_name=data.full_name,
+        role=data.role,
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    return UserResponse.model_validate(new_user)
 
 
 # ── Password Reset ────────────────────────────────────────────────────────────

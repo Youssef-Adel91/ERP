@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
-from app.core.security.security import require_role
+from app.core.security.security import require_role, RequireRoleForWrites
 from app.modules.cases.models.vendor import Vendor
 from app.modules.cases.services.engine import create_case
 from app.modules.system.dependencies import CurrentUser
@@ -37,9 +37,9 @@ from app.plugins.travel.models.package import (
     component_to_booking_service,
 )
 
-router = APIRouter(prefix="/travel/packages", tags=["Travel Plugin — Packages"])
-components_router = APIRouter(prefix="/travel/components", tags=["Travel Plugin — Packages"])
-itinerary_router = APIRouter(prefix="/travel/itinerary-days", tags=["Travel Plugin — Packages"])
+router = APIRouter(prefix="/travel/packages", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
+components_router = APIRouter(prefix="/travel/components", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
+itinerary_router = APIRouter(prefix="/travel/itinerary-days", tags=["Travel Plugin — Packages"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF", "SALES"))])
 
 
 # ── Pydantic Schemas ────────────────────────────────────────────────────────

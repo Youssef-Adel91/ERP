@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_tenant_db
 from app.core.event_bus import DomainEvent, get_event_bus
+from app.core.security.security import RequireRoleForWrites
 from app.modules.contacts.models import Contact
 from app.modules.system.dependencies import CurrentUser
 from app.plugins.inventory.models import Invoice, InvoiceLine, InvoiceStatus, Item
@@ -49,7 +50,7 @@ from app.plugins.inventory.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF"))])
 
 
 # ══════════════════════════════════════════════════════════════════
