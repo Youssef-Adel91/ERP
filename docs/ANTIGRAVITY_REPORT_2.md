@@ -233,3 +233,4 @@ b74f1138  feat(rbac): gate 21 routers with RequireRoleForWrites; add POST /auth/
 | ETA e-invoicing config with tests | ✅ |
 | Shipping carrier setup with tests | ✅ |
 | Push to `origin/security-hardening` | 🔄 (next step) |
+

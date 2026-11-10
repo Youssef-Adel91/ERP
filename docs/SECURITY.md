@@ -90,3 +90,4 @@ While migration to Phase 2 is staged, the following controls protect user tokens
 2. **Redis Reuse Detection**: Stolen refresh tokens can only be used once; subsequent attempts trigger instant tenant-wide user token invalidation.
 3. **Role Gates (`RequireRoleForWrites`)**: State-changing endpoints are strictly guarded against unauthorized roles.
 4. **Tenant Isolation**: Schema-level PostgreSQL isolation ensures one tenant's queries can never access or modify another tenant's schema even if an access token is forged or leaked.
+

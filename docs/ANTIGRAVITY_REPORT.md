@@ -151,3 +151,4 @@ All 140 backend tests and 42 frontend routes pass cleanly:
    - For even faster DB provisioning across remote cloud databases, a template schema cloning approach (`CREATE SCHEMA ... ; CREATE TABLE ... (LIKE template_schema.table INCLUDING ALL)`) can be introduced once schema migrations stabilize.
 3. **Billing Plans Catalog**:
    - `app/modules/billing/services/seed.py` defines Entry, Professional, and Enterprise plans with branch and API limits. When onboarding new free tenants, ensure a default `FREE` subscription tier is attached if feature entitlement gating is activated in production.
+

@@ -100,3 +100,4 @@ async def test_reconciler_clears_orphan_for_nonexistent_tenant():
 
     val = await rc.get(key)
     assert val is None
+
