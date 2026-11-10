@@ -52,6 +52,7 @@ function NewBookingInner() {
   const [groupSize, setGroupSize] = useState<number | "">("");
   const [destination, setDestination] = useState("");
   const [notes, setNotes] = useState("");
+  const [accountingMode, setAccountingMode] = useState<"principal" | "agent">("principal");
   const [sellPrice, setSellPrice] = useState<number | "">("");
   const [buyPrice, setBuyPrice] = useState<number | "">("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -83,6 +84,7 @@ function NewBookingInner() {
         travel_date_requested: travelDate,
         return_date_requested: returnDate || undefined,
         group_size: groupSize || undefined,
+        accounting_mode: accountingMode,
         notes: notes || undefined,
       });
       return res.data;
@@ -110,6 +112,7 @@ function NewBookingInner() {
           currency: "EGP",
           sell_price: sellPrice || undefined,
           buy_price: buyPrice || undefined,
+          accounting_mode: accountingMode,
           notes: notes || undefined,
         },
       });
@@ -193,6 +196,16 @@ function NewBookingInner() {
             </Field>
           </div>
         )}
+        <Field label="المعالجة المحاسبية (Accounting Mode)">
+          <select
+            className="input"
+            value={accountingMode}
+            onChange={(e) => setAccountingMode(e.target.value as "principal" | "agent")}
+          >
+            <option value="principal">أصيل (Principal) — إثبات كامل الإيراد والتكلفة</option>
+            <option value="agent">وسيط / وكيل (Agent) — إثبات صافي العمولة فقط</option>
+          </select>
+        </Field>
         <Field label="ملاحظات">
           <textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>

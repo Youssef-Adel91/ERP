@@ -239,6 +239,7 @@ export default function TravelPage() {
                 <tr>
                   <th className="px-6 py-4">العميل</th>
                   <th className="px-6 py-4">الوجهة</th>
+                  <th className="px-6 py-4">النمط المحاسبي</th>
                   <th className="px-6 py-4">تاريخ السفر</th>
                   <th className="px-6 py-4">الحالة</th>
                   <th className="px-6 py-4 flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> الهامش</th>
@@ -252,6 +253,15 @@ export default function TravelPage() {
                     <tr key={b.id} className="hover:bg-surface-container-lowest transition-colors">
                       <td className="px-6 py-4 font-medium">{b.data?.customer_name ?? "—"}</td>
                       <td className="px-6 py-4 text-on-surface-variant">{b.data?.destination ?? "—"}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                          b.data?.accounting_mode === "agent"
+                            ? "bg-secondary-container/20 text-secondary border-secondary/30"
+                            : "bg-surface-container-high text-on-surface-variant border-outline-variant"
+                        }`}>
+                          {b.data?.accounting_mode === "agent" ? "وكيل (Agent)" : "أصيل (Principal)"}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 font-data-mono" dir="ltr">{b.start_date ?? "—"}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded text-[11px] font-bold ${stageTone[b.current_stage] ?? ""}`}>

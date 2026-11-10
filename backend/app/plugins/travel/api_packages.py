@@ -159,6 +159,7 @@ class BookFromPackageIn(BaseModel):
     travel_date_requested: date
     return_date_requested: date | None = None
     group_size: int | None = None  # defaults to package.min_pax
+    accounting_mode: str = "principal"
     notes: str | None = None
     contacts: list[dict[str, Any]] = []  # [{contact_id, role, meta}]
 
@@ -464,6 +465,7 @@ async def create_booking_from_package(
         "return_date_requested": body.return_date_requested.isoformat() if body.return_date_requested else None,
         "group_size": body.group_size or package.min_pax,
         "trip_type": "package",
+        "accounting_mode": body.accounting_mode,
         "services": services,
         "currency": package.currency,
         "notes": body.notes,
