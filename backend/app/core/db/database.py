@@ -206,6 +206,10 @@ class _FakeRedis:
             if fnmatch.fnmatch(key, match):
                 yield key
 
+    async def keys(self, pattern: str = "*") -> list[str]:
+        import fnmatch
+        return [k for k in list(self._store.keys()) if fnmatch.fnmatch(k, pattern)]
+
     def pipeline(self, transaction: bool = True) -> _FakePipeline:
         return _FakePipeline(self)
 
@@ -637,40 +641,77 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     logger.info("✅ Schema '%s' created.", schema)
 
     # ── Step 2a: Create all tenant tables ─────────────────────────────────
-    # Architecture note: every tenant model defines __table_args__ schema="tenant"
-    # (a PLACEHOLDER schema name, never a real Postgres schema) and
-    # ForeignKey("tenant.X.id") as hardcoded strings.  This placeholder-schema
-    # pattern is used correctly elsewhere in this file (see tenant_session()
-    # above) via `engine.execution_options(schema_translate_map={"tenant": schema})`,
-    # which rewrites "tenant" -> the real tenant_<uuid> schema AT SQL-COMPILE
-    # TIME, for both a table's own schema AND any FK/Enum schema references
-    # in the same statement. That is the ONLY mechanism proven to work here.
-    #
-    # DO NOT REINTRODUCE either of these two previously-attempted, and
-    # CONFIRMED BROKEN, approaches:
-    #   1. `tbl.to_metadata(_meta, schema="tenant_xxx")` — to_metadata()
-    #      rebinds the Table object's own schema, but string-based
-    #      ForeignKey("tenant.accounts.id") references stay frozen with the
-    #      literal "tenant" prefix (they are parsed once at class-definition
-    #      time), so create_all() fails with
-    #      NoReferencedTableError: ... could not find table 'tenant.accounts'.
-    #   2. `tbl.to_metadata(_meta, schema=None)` + nulling Enum.schema +
-    #      switching to Neon's UNPOOLED endpoint + `search_path` connect_args
-    #      — the theory was that unqualified DDL + search_path would let
-    #      Postgres resolve everything by bare tablename. It does NOT: the
-    #      FK string colspec is still literally "tenant.accounts.id", and
-    #      SQLAlchemy's FK resolution looks for a table registered under
-    #      that exact "tenant.accounts" key in the (single, schema=None)
-    #      MetaData — which no longer exists once schema was stripped — so
-    #      the identical NoReferencedTableError recurs. Verified by
-    #      re-testing against a live Neon DB; this is not a hypothesis.
-    #
-    # schema_translate_map avoids both problems because it does not touch
-    # Table/Column/ForeignKey objects at all — it rewrites the schema token
-    # in the compiled SQL text right before execution, so "tenant" resolves
-    # to the real schema consistently everywhere it appears (table DDL, FK
-    # references, Enum CREATE TYPE) in one pass.
-    from sqlalchemy import create_engine as _sync_create_engine
+    # If a template schema exists (e.g. tenant_template or tenant_dummy_test),
+    # use server-side PL/pgSQL cloning. This completes in ~7s instead of ~2-4m
+    # over WAN by eliminating hundreds of round-trips.
+    cloned_from_template = False
+    if not is_sqlite:
+        try:
+            async with engine.begin() as conn:
+                check_tpl = await conn.execute(
+                    text(
+                        "SELECT schema_name FROM information_schema.schemata "
+                        "WHERE schema_name IN ('tenant_template', 'tenant_dummy_test') "
+                        "ORDER BY CASE WHEN schema_name = 'tenant_template' THEN 1 ELSE 2 END LIMIT 1"
+                    )
+                )
+                tpl_schema = check_tpl.scalar()
+                if tpl_schema:
+                    clone_sql = f"""
+                    DO $$
+                    DECLARE
+                        r RECORD;
+                        fk RECORD;
+                    BEGIN
+                        -- 1. Create tables with defaults, constraints, indexes
+                        FOR r IN (SELECT table_name FROM information_schema.tables WHERE table_schema = '{tpl_schema}' AND table_type = 'BASE TABLE')
+                        LOOP
+                            EXECUTE format('CREATE TABLE IF NOT EXISTS "{schema}".%I (LIKE "{tpl_schema}".%I INCLUDING ALL)', r.table_name, r.table_name);
+                        END LOOP;
+
+                        -- 2. Add foreign keys within new tenant schema
+                        FOR fk IN (
+                            SELECT 
+                                tc.table_name,
+                                kcu.column_name,
+                                ccu.table_name AS foreign_table_name,
+                                ccu.column_name AS foreign_column_name,
+                                rc.update_rule,
+                                rc.delete_rule,
+                                tc.constraint_name
+                            FROM information_schema.table_constraints AS tc
+                            JOIN information_schema.key_column_usage AS kcu
+                                ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+                            JOIN information_schema.constraint_column_usage AS ccu
+                                ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+                            JOIN information_schema.referential_constraints AS rc
+                                ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
+                            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = '{tpl_schema}'
+                        )
+                        LOOP
+                            BEGIN
+                                EXECUTE format(
+                                    'ALTER TABLE "{schema}".%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES "{schema}".%I (%I) ON UPDATE %s ON DELETE %s',
+                                    fk.table_name, fk.constraint_name, fk.column_name,
+                                    fk.foreign_table_name, fk.foreign_column_name,
+                                    fk.update_rule, fk.delete_rule
+                                );
+                            EXCEPTION WHEN duplicate_object THEN NULL;
+                            END;
+                        END LOOP;
+                    END $$;
+                    """
+                    await conn.exec_driver_sql(clone_sql)
+                    await conn.exec_driver_sql(
+                        f'INSERT INTO "{schema}".alembic_version SELECT * FROM "{tpl_schema}".alembic_version ON CONFLICT DO NOTHING'
+                    )
+                    cloned_from_template = True
+                    logger.info("✅ Tenant schema '%s' cloned from template '%s' in seconds.", schema, tpl_schema)
+        except Exception as clone_err:
+            logger.warning("⚠️ Template cloning failed (%s), falling back to standard create_all.", clone_err)
+
+    if not cloned_from_template:
+        from sqlalchemy import create_engine as _sync_create_engine
 
     # Build psycopg2 sync URL from the async engine URL. Use the POOLED
     # endpoint (same one the app uses everywhere else) — schema_translate_map
@@ -718,37 +759,30 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
         _sync_engine.dispose()
 
     # ── Step 2b: Stamp alembic_version to current head ────────────────────
-    # This tells alembic "this schema is already at head" so future
-    # `alembic upgrade head` runs are no-ops instead of failing with
-    # "table already exists".
-    import subprocess
-    import sys
-    from pathlib import Path
-    _backend_root = Path(__file__).resolve().parents[3]
-    stamp_result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema}", "stamp", "head"],
-        capture_output=True,
-        cwd=_backend_root,
-    )
-    if stamp_result.returncode != 0:
-        # Non-fatal: tables exist, future migrations will still work — they
-        # may just see an "already applied" warning. Log but don't raise.
-        logger.warning(
-            "⚠️ Alembic stamp failed for schema=%s (tables created OK): %s",
-            schema, stamp_result.stderr.decode(errors="replace")[-500:],
+    if not cloned_from_template:
+        import subprocess
+        import sys
+        from pathlib import Path
+        _backend_root = Path(__file__).resolve().parents[3]
+        stamp_result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-n", "tenant", "-x", f"schema={schema}", "stamp", "head"],
+            capture_output=True,
+            cwd=_backend_root,
         )
-    else:
-        logger.info("✅ Tenant schema '%s' stamped to alembic head.", schema)
+        if stamp_result.returncode != 0:
+            logger.warning(
+                "⚠️ Alembic stamp failed for schema=%s (tables created OK): %s",
+                schema, stamp_result.stderr.decode(errors="replace")[-500:],
+            )
+        else:
+            logger.info("✅ Tenant schema '%s' stamped to alembic head.", schema)
 
-    # ── Step 3: Seed default Chart of Accounts ────────────────────────────────
-    # Each new tenant gets the same baseline chart, ready for event handlers.
-    # NOT idempotent (Account.code is unique but there's no existence check
-    # before insert) — only run for a genuinely new tenant. Callers doing a
-    # table-creation-only re-run against an already-provisioned tenant (e.g.
-    # scripts/cutover_plugins_to_modules.py, which re-runs this to create the
-    # new modules/ tables on an existing tenant) must pass seed_coa=False or
-    # this will raise a unique-constraint violation on re-seeding.
+    # ── Step 3: Seed default Chart of Accounts, Warehouse & AccountingPeriod ──
     if seed_coa:
+        from app.modules.inventory.models.core import WarehouseType as _WhType
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+
         async with tenant_session(tenant_id) as session:
             for acct_data in DEFAULT_ACCOUNTS:
                 account = Account(
@@ -760,45 +794,20 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
                 )
                 session.add(account)
 
-        # Default warehouse: returns, stock receipts and transfers all require
-        # one, and a brand-new tenant had none (the return dialog's warehouse
-        # picker was empty, so no sales return could ever be processed).
-        from app.modules.inventory.models.core import WarehouseType as _WhType
-
-        async with tenant_session(tenant_id) as session:
             session.add(Warehouse(name="المخزن الرئيسي", code="MAIN", type=_WhType.MAIN))
 
-        logger.info(
-            "✅ Tenant schema '%s' provisioned with %d default accounts.",
-            schema,
-            len(DEFAULT_ACCOUNTS),
-        )
-
-        # ── Step 3b: Seed a wide-open AccountingPeriod ────────────────────────
-        # Discovered via live verification (11 Sep 2026): create_journal_entry()
-        # (app/modules/accounting/services/journal.py) HARD-BLOCKS every single
-        # journal entry — including the automated ones from event handlers like
-        # invoice.created and the GL Bridge (sales/inventory events) — unless an
-        # AccountingPeriod row exists covering entry_date. NOTHING in this
-        # codebase ever created one: no seeding here, no admin API endpoint.
-        # That means, before this fix, EVERY tenant would have hit
-        # ClosedPeriodError on its very first attempted journal entry, for as
-        # long as the tenant has existed — a codebase-wide blocker for all
-        # automated GL posting, not specific to any one vertical. Seed one
-        # deliberately wide-open period (2020–2099) so postings are never
-        # blocked by a missing period; an OWNER/ADMIN/ACCOUNTING user can later
-        # close/split periods via the accounting UI once that workflow exists.
-        from datetime import UTC as _UTC
-        from datetime import datetime as _dt
-
-        async with tenant_session(tenant_id) as session:
             session.add(AccountingPeriod(
                 name="Open Period",
                 start_date=_dt(2020, 1, 1, tzinfo=_UTC),
                 end_date=_dt(2099, 12, 31, 23, 59, 59, tzinfo=_UTC),
                 is_closed=False,
             ))
-        logger.info("✅ Tenant schema '%s' seeded with a default open AccountingPeriod.", schema)
+
+        logger.info(
+            "✅ Tenant schema '%s' provisioned with %d accounts, default warehouse & accounting period.",
+            schema,
+            len(DEFAULT_ACCOUNTS),
+        )
     else:
         logger.info(
             "✅ Tenant schema '%s' tables created/verified (COA seeding skipped).",
