@@ -645,14 +645,15 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     # use server-side PL/pgSQL cloning. This completes in ~7s instead of ~2-4m
     # over WAN by eliminating hundreds of round-trips.
     cloned_from_template = False
-    if not is_sqlite:
+    import os as _os_tpl
+    if not is_sqlite and _os_tpl.environ.get("TENANT_TEMPLATE_CLONE") == "1":
         try:
             async with engine.begin() as conn:
                 check_tpl = await conn.execute(
                     text(
                         "SELECT schema_name FROM information_schema.schemata "
-                        "WHERE schema_name IN ('tenant_template', 'tenant_dummy_test') "
-                        "ORDER BY CASE WHEN schema_name = 'tenant_template' THEN 1 ELSE 2 END LIMIT 1"
+                        "WHERE schema_name = 'tenant_template' "
+                        "LIMIT 1"
                     )
                 )
                 tpl_schema = check_tpl.scalar()
@@ -713,50 +714,50 @@ async def _provision_tenant_schema_internal(tenant_id: str, seed_coa: bool = Tru
     if not cloned_from_template:
         from sqlalchemy import create_engine as _sync_create_engine
 
-    # Build psycopg2 sync URL from the async engine URL. Use the POOLED
-    # endpoint (same one the app uses everywhere else) — schema_translate_map
-    # needs no `options`/search_path connect_args at all, so the pooler's
-    # rejection of startup-parameter `options` is a non-issue here.
-    _db_url = (
-        engine.url.render_as_string(hide_password=False)
-        .replace("postgresql+asyncpg", "postgresql+psycopg2")
-        .replace("ssl=require", "sslmode=require")
-    )
-    _sync_engine = _sync_create_engine(
-        _db_url,
-        pool_pre_ping=True,
-    ).execution_options(schema_translate_map={"tenant": schema})
+        # Build psycopg2 sync URL from the async engine URL. Use the POOLED
+        # endpoint (same one the app uses everywhere else) — schema_translate_map
+        # needs no `options`/search_path connect_args at all, so the pooler's
+        # rejection of startup-parameter `options` is a non-issue here.
+        _db_url = (
+            engine.url.render_as_string(hide_password=False)
+            .replace("postgresql+asyncpg", "postgresql+psycopg2")
+            .replace("ssl=require", "sslmode=require")
+        )
+        _sync_engine = _sync_create_engine(
+            _db_url,
+            pool_pre_ping=True,
+        ).execution_options(schema_translate_map={"tenant": schema})
 
-    try:
-        _shared_metadata = tenant_tables[0].metadata
+        try:
+            _shared_metadata = tenant_tables[0].metadata
 
-        # Many tenant models declare their enum with create_type=False (the
-        # alembic chain used to create the types). create_all() therefore
-        # never emits CREATE TYPE, and the first table that references one
-        # fails with `type "<schema>.documentstate" does not exist`. Create
-        # every enum type up front, idempotently, in the tenant schema.
-        from sqlalchemy import Enum as _SAEnum
+            # Many tenant models declare their enum with create_type=False (the
+            # alembic chain used to create the types). create_all() therefore
+            # never emits CREATE TYPE, and the first table that references one
+            # fails with `type "<schema>.documentstate" does not exist`. Create
+            # every enum type up front, idempotently, in the tenant schema.
+            from sqlalchemy import Enum as _SAEnum
 
-        _enum_ddl: dict[str, str] = {}
-        for _tbl in tenant_tables:
-            for _col in _tbl.columns:
-                _t = _col.type
-                if isinstance(_t, _SAEnum) and _t.name and _t.name not in _enum_ddl:
-                    _labels = ", ".join(
-                        "'" + str(_v).replace("'", "''") + "'" for _v in _t.enums
-                    )
-                    _enum_ddl[_t.name] = (
-                        f'DO $$ BEGIN CREATE TYPE "{schema}"."{_t.name}" AS ENUM ({_labels}); '
-                        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
-                    )
-        with _sync_engine.begin() as _conn:
-            for _ddl in _enum_ddl.values():
-                _conn.exec_driver_sql(_ddl.replace("%", "%%"))
+            _enum_ddl: dict[str, str] = {}
+            for _tbl in tenant_tables:
+                for _col in _tbl.columns:
+                    _t = _col.type
+                    if isinstance(_t, _SAEnum) and _t.name and _t.name not in _enum_ddl:
+                        _labels = ", ".join(
+                            "'" + str(_v).replace("'", "''") + "'" for _v in _t.enums
+                        )
+                        _enum_ddl[_t.name] = (
+                            f'DO $$ BEGIN CREATE TYPE "{schema}"."{_t.name}" AS ENUM ({_labels}); '
+                            f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+                        )
+            with _sync_engine.begin() as _conn:
+                for _ddl in _enum_ddl.values():
+                    _conn.exec_driver_sql(_ddl.replace("%", "%%"))
 
-        _shared_metadata.create_all(_sync_engine, tables=tenant_tables, checkfirst=True)
-        logger.info("✅ Tenant schema '%s' tables created via create_all.", schema)
-    finally:
-        _sync_engine.dispose()
+            _shared_metadata.create_all(_sync_engine, tables=tenant_tables, checkfirst=True)
+            logger.info("✅ Tenant schema '%s' tables created via create_all.", schema)
+        finally:
+            _sync_engine.dispose()
 
     # ── Step 2b: Stamp alembic_version to current head ────────────────────
     if not cloned_from_template:
