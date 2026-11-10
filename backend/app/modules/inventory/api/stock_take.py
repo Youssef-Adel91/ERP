@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.database import get_tenant_db
+from app.core.security.security import RequireRoleForWrites
 from app.modules.inventory.models.stock_take import StockTake
 from app.modules.inventory.services.stock_take import (
     get_blind_count_sheet,
@@ -30,7 +31,7 @@ from app.modules.inventory.services.stock_take import (
 )
 from app.modules.system.dependencies import CurrentUser
 
-router = APIRouter(prefix="/inventory/stock-takes", tags=["Inventory - Stock Take"])
+router = APIRouter(prefix="/inventory/stock-takes", tags=["Inventory - Stock Take"], dependencies=[Depends(RequireRoleForWrites("OWNER", "ADMIN", "STAFF"))])
 
 
 class StockTakeCreateRequest(BaseModel):
