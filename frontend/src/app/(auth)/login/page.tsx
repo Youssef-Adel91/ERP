@@ -252,31 +252,6 @@ export default function LoginPage() {
 
         {/* Security Footer */}
         <footer className="flex flex-col items-center gap-6">
-          <div className="flex items-center justify-center gap-8 opacity-60 hover:opacity-100 transition-all duration-300 grayscale hover:grayscale-0">
-            {[
-              { label: "SSL Secure", icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-6 h-6 fill-current">
-                  <path d="m438-452-58-57q-11-11-27.5-11T325-509q-11 11-11 27.5t11 27.5l84 85q12 12 28 12t28-12l170-170q11-11 11-27.5T635-594q-11-11-27.5-11T580-594L438-452Zm42 356q-7 0-14-1t-13-3Q270-162 175-261T80-480v-240q0-27 16.5-47.5T138-800l320-120q10-4 22-4t22 4l320 120q25 9 41.5 29.5T880-720v240q0 151-95 250T493-99q-6 2-13 3t-14 1Z"/>
-                </svg>
-              )},
-              { label: "GDPR Ready", icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-6 h-6 fill-current">
-                  <path d="M480-80q-83 0-141.5-58.5T280-280q0-48 18.5-91T351-446q-11-20-16-43t-5-45q0-83 58.5-141.5T530-734q23 0 44 5.5t39 15.5l-81 81q-5 5-7.5 11t-2.5 13q0 13 9 22t22 9q7 0 13-2.5t11-7.5l81-81q10 18 15.5 39t5.5 44q0 46-18 87.5T601-446q33 26 51.5 65T671-297q0 79-56.5 138T480-80Zm0-80q46 0 78-32.5T590-271q0-28-10.5-51.5T549-363l-43 43q-12 12-28.5 12T449-320q-12-12-12-28.5t12-28.5l43-43q-17-15-26-37.5T457-506q-28 13-45.5 38.5T394-406h-80q0-57 32-103.5T432-577q-7-12-11.5-25.5T416-630q0-46 32-79t79-33q14 0 27 3.5t24 9.5l-39 39q-24 24-24 56.5t24 56.5q24 24 56.5 24t56.5-24l39-39q6 11 9.5 24t3.5 27q0 47-33 79t-79 32h-4q5 10 7.5 20.5T620-491q50 26 81.5 74T733-314q-1 66-47.5 113T580-154q-16 0-31-2.5T521-164l53-53q6-6 8.5-13.5T585-246q0-17-11.5-28.5T545-286q-7 0-14.5 2.5T519-277l-53 53q-5-15-7.5-30T456-284q0-51 29-91t75-56q-13-4-24.5-11T516-459q-5 5-7.5 11t-2.5 13q0 13 8.5 22T536-404q7 0 13.5-2.5T561-414q26 27 40.5 62.5T616-275q0 46-32.5 80.5T505-160q-3 0-12.5-.5T480-160Z"/>
-                </svg>
-              )},
-              { label: "ISO 27001", icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="w-6 h-6 fill-current">
-                  <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-120q-83 0-141.5-58.5T280-480q0-83 58.5-141.5T480-680q83 0 141.5 58.5T680-480q0 83-58.5 141.5T480-280Z"/>
-                </svg>
-              )},
-            ].map(({ label, icon }) => (
-              <div key={label} className="flex flex-col items-center gap-1 text-on-surface-variant">
-                {icon}
-                <span className="font-label-caps text-[9px] uppercase tracking-widest">{label}</span>
-              </div>
-            ))}
-          </div>
-
           <div className="text-center text-on-surface-variant font-body-sm text-body-sm space-y-1">
             <p>© {new Date().getFullYear()} Trust Core. جميع الحقوق محفوظة.</p>
             <div className="flex justify-center gap-4">

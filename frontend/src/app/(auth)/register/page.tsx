@@ -370,15 +370,6 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        {/* Security footer */}
-        <div className="flex justify-center gap-8 opacity-50 hover:opacity-80 transition-opacity">
-          {["SSL Secure", "GDPR Ready", "ISO 27001"].map(label => (
-            <div key={label} className="flex flex-col items-center gap-1 text-on-surface-variant">
-              <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center text-[8px] font-black">✓</div>
-              <span className="text-[9px] uppercase tracking-widest font-bold">{label}</span>
-            </div>
-          ))}
-        </div>
       </main>
     </AuthShell>
   );
